@@ -11,27 +11,65 @@ interface PowerPageInfo {
   slogan: string;
 }
 
+interface ImageInput {
+  base64: string;
+  mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
   if (!apiKey) return missingKeyResponse();
 
-  const { topic, powerPage, powerPageInfo } = (await req.json()) as {
+  const { topic, powerPage, powerPageInfo, powerPageImages } = (await req.json()) as {
     topic?: string;
     powerPage?: boolean;
     powerPageInfo?: PowerPageInfo;
+    powerPageImages?: ImageInput[];
   };
 
   const client = new Anthropic({ apiKey });
 
   try {
-    const prompt = powerPage && powerPageInfo
-      ? buildPowerPagePrompt(powerPageInfo)
-      : buildNormalPrompt(topic?.trim() || "대만 마케팅 인사이트");
+    if (powerPage && powerPageInfo) {
+      const promptText = buildPowerPagePrompt(powerPageInfo);
+      const hasImages = powerPageImages && powerPageImages.length > 0;
 
+      const imageBlocks: Anthropic.ImageBlockParam[] = hasImages
+        ? powerPageImages!.map((img) => ({
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: img.mediaType,
+              data: img.base64,
+            },
+          }))
+        : [];
+
+      const textBlock: Anthropic.TextBlockParam = {
+        type: "text",
+        text: hasImages
+          ? `위 ${powerPageImages!.length}장의 업체 사진을 참고해서, 아래 업체 정보 기반 카드뉴스를 생성해주세요.\n\n${promptText}`
+          : promptText,
+      };
+
+      const response = await client.messages.create({
+        model: "claude-opus-4-6",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: [...imageBlocks, textBlock] }],
+      });
+
+      const text =
+        response.content[0].type === "text" ? response.content[0].text : "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("JSON 파싱 실패");
+      return NextResponse.json(JSON.parse(jsonMatch[0]));
+    }
+
+    // 일반 모드
     const response = await client.messages.create({
       model: "claude-opus-4-6",
       max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: buildNormalPrompt(topic?.trim() || "대만 마케팅 인사이트") }],
     });
 
     const text =
@@ -65,6 +103,7 @@ function buildPowerPagePrompt(info: PowerPageInfo): string {
 3. card5의 subtitle에는 한국어 원문 주소를 반드시 포함
 4. 대만 여행자가 실제 방문하고 싶어지는 생동감 있는 표현 사용
 5. 카드 구성: 커버(상호명+슬로건) → 대표메뉴 하이라이트 → 분위기/특징 → 메뉴 리스트 → 방문 안내
+6. 업체 사진이 제공된 경우 사진 속 분위기·메뉴·인테리어를 텍스트에 반영할 것
 
 JSON 형식으로만 출력하세요. 설명 없이 JSON만:
 

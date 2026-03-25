@@ -72,6 +72,7 @@ export default function HomePage() {
     storeName: "", storeNameEn: "", address: "", menus: "", keywords: "", slogan: "",
   });
   const [savedPowerPages, setSavedPowerPages] = useState<PowerPagePreset[]>([]);
+  const [powerPageImages, setPowerPageImages] = useState<(UploadSlot | null)[]>(Array(5).fill(null));
 
   const [topic, setTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -193,10 +194,18 @@ export default function HomePage() {
     setCaption("");
     setEditOpen(false);
     try {
+      const filledImages = powerPageImages.filter(Boolean) as UploadSlot[];
       const res = await fetch("/api/cardnews/generate", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ topic, powerPage, powerPageInfo }),
+        body: JSON.stringify({
+          topic,
+          powerPage,
+          powerPageInfo,
+          powerPageImages: filledImages.length > 0
+            ? filledImages.map((s) => ({ base64: s.base64, mediaType: s.mediaType }))
+            : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "생성 오류");
@@ -245,6 +254,12 @@ export default function HomePage() {
     setUploadSlots((prev) => prev.map((s, i) => i === index ? slot : s));
     setAnalyzeError("");
     setAnalyzeSuccess("");
+  }
+
+  async function handlePowerPageImageFile(file: File, index: number) {
+    if (!file.type.startsWith("image/")) return;
+    const slot = await readFileAsSlot(file);
+    setPowerPageImages((prev) => prev.map((s, i) => i === index ? slot : s));
   }
 
   async function handleSlotFile3(file: File, index: number) {
@@ -396,6 +411,7 @@ export default function HomePage() {
     setTopic("");
     setPowerPage(false);
     setPowerPageInfo({ storeName: "", storeNameEn: "", address: "", menus: "", keywords: "", slogan: "" });
+    setPowerPageImages(Array(5).fill(null));
     setBlogResult(null);
     setError("");
     setEditOpen(false);
@@ -622,6 +638,21 @@ export default function HomePage() {
                       >
                         + 이 업체 저장
                       </button>
+                    </div>
+
+                    {/* 광고주 사진 업로드 */}
+                    <div className="space-y-2 border border-orange-100 rounded-xl p-4 bg-orange-50/30">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-600">📷 광고주 사진
+                          <span className="text-gray-400 font-normal ml-1">(선택 · 최대 5장)</span>
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">업체 사진을 올리면 Claude가 이미지를 참고해 더 생동감 있는 카드뉴스를 만들어 드립니다</p>
+                      </div>
+                      <MultiUploadGrid
+                        slots={powerPageImages}
+                        onFileSelected={handlePowerPageImageFile}
+                        onRemove={(i) => setPowerPageImages((prev) => prev.map((s, idx) => idx === i ? null : s))}
+                      />
                     </div>
                   </div>
                 </div>
