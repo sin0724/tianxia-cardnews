@@ -12,6 +12,7 @@ import {
   DynCard1, DynCard2, DynCard3, DynCard4, DynCard5,
   type CardStyleConfig,
 } from "@/components/DynamicCards";
+import { PPCard1, PPCard2, PPCard3, PPCard4, PPCard5 } from "@/components/PowerPageCards";
 
 const DEFAULT_TOPICS = [
   "대만 MZ세대 SNS 트렌드",
@@ -421,6 +422,20 @@ export default function HomePage() {
     if (!content) return null;
     const page = `0${i + 1} / 05`;
     const cat = content.category ?? "";
+
+    // 파워페이지: 광고주 사진을 배경으로 텍스트 오버레이
+    if (powerPage) {
+      const image = powerPageImages[i]?.preview ?? undefined;
+      const pp = { page, cat, image };
+      switch (i) {
+        case 0: return <PPCard1 data={content.card1} {...pp} />;
+        case 1: return <PPCard2 data={content.card2} {...pp} />;
+        case 2: return <PPCard3 data={content.card3} {...pp} />;
+        case 3: return <PPCard4 data={content.card4} {...pp} />;
+        case 4: return <PPCard5 data={content.card5} {...pp} />;
+      }
+    }
+
     const customStyle = customTemplates.find((t) => t.id === selectedId);
     if (customStyle) {
       const props = { page, cat, s: customStyle };
@@ -640,26 +655,38 @@ export default function HomePage() {
                       </button>
                     </div>
 
-                    {/* 광고주 사진 업로드 */}
-                    <div className="space-y-2 border border-orange-100 rounded-xl p-4 bg-orange-50/30">
+                    {/* 광고주 사진 업로드 — 카드 배경으로 사용됨 */}
+                    <div className="space-y-3 border-2 border-orange-200 rounded-xl p-4 bg-orange-50/40">
                       <div>
-                        <p className="text-xs font-semibold text-gray-600">📷 광고주 사진
-                          <span className="text-gray-400 font-normal ml-1">(선택 · 최대 5장)</span>
+                        <p className="text-sm font-bold text-gray-700">📷 업체 사진 업로드
+                          <span className="text-orange-500 font-normal text-xs ml-2">카드 배경으로 사용됩니다</span>
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5">업체 사진을 올리면 Claude가 이미지를 참고해 더 생동감 있는 카드뉴스를 만들어 드립니다</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          카드 1~5 순서대로 한 장씩 업로드하세요. 사진이 카드 배경이 되고 번체 중문 텍스트가 위에 올라갑니다.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-5 gap-1.5 text-center">
+                        {["커버", "메뉴", "분위기", "리스트", "방문안내"].map((label, i) => (
+                          <span key={i} className="text-[10px] text-gray-400 font-medium">{label}</span>
+                        ))}
                       </div>
                       <MultiUploadGrid
                         slots={powerPageImages}
                         onFileSelected={handlePowerPageImageFile}
                         onRemove={(i) => setPowerPageImages((prev) => prev.map((s, idx) => idx === i ? null : s))}
                       />
+                      {powerPageImages.some(Boolean) && (
+                        <p className="text-xs text-orange-600 bg-orange-100 rounded-lg px-3 py-2">
+                          ✅ {powerPageImages.filter(Boolean).length}장 업로드됨 — 사진이 카드 배경으로 적용됩니다
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* 템플릿 선택 */}
-              <div className="space-y-3">
+              {/* 템플릿 선택 (파워페이지는 사진이 배경이므로 숨김) */}
+              {!powerPage && <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-[#1A1A1A]">🎨 템플릿 선택</h3>
                   <span className="text-xs text-gray-400">카드 스타일을 선택하세요</span>
@@ -696,10 +723,10 @@ export default function HomePage() {
                 {analyzeSuccess && (
                   <p className="text-xs text-green-600 bg-green-50 rounded-lg px-3 py-2">✅ &apos;{analyzeSuccess}&apos; 템플릿이 추가되어 선택됐어요!</p>
                 )}
-              </div>
+              </div>}
 
-              {/* 레퍼런스 이미지 업로드 (인라인) */}
-              <div className="space-y-3 border-t border-gray-100 pt-6">
+              {/* 레퍼런스 이미지 업로드 (인라인) — 파워페이지 모드에서는 숨김 */}
+              {!powerPage && <div className="space-y-3 border-t border-gray-100 pt-6">
                 <div>
                   <h3 className="text-sm font-bold text-[#1A1A1A]">
                     🖼️ 레퍼런스 이미지
@@ -725,7 +752,7 @@ export default function HomePage() {
                     {analyzing ? <><Spinner /> 스타일 분석 중...</> : `✨ ${uploadSlots.filter(Boolean).length}장으로 템플릿 만들기`}
                   </button>
                 )}
-              </div>
+              </div>}
 
               {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-2">{error}</p>}
 
