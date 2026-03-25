@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import JSZip from "jszip";
 import {
@@ -59,6 +59,12 @@ interface PowerPagePreset extends PowerPageInfo {
   id: string;
 }
 
+interface UploadSlot {
+  preview: string;
+  base64: string;
+  mediaType: string;
+}
+
 export default function HomePage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [powerPage, setPowerPage] = useState(false);
@@ -81,20 +87,16 @@ export default function HomePage() {
   const [editTab, setEditTab] = useState<EditTab>("카드 1");
 
   // Step 2 인라인 레퍼런스 업로드
-  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [uploadData, setUploadData] = useState<{ base64: string; mediaType: string } | null>(null);
+  const [uploadSlots, setUploadSlots] = useState<(UploadSlot | null)[]>(Array(5).fill(null));
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
   const [analyzeSuccess, setAnalyzeSuccess] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Step 3 모달 레퍼런스 업로드
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadPreview3, setUploadPreview3] = useState<string | null>(null);
-  const [uploadData3, setUploadData3] = useState<{ base64: string; mediaType: string } | null>(null);
+  const [uploadSlots3, setUploadSlots3] = useState<(UploadSlot | null)[]>(Array(5).fill(null));
   const [analyzing3, setAnalyzing3] = useState(false);
   const [analyzeError3, setAnalyzeError3] = useState("");
-  const fileInputRef3 = useRef<HTMLInputElement>(null);
 
   const [apiKey, setApiKey] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -224,44 +226,51 @@ export default function HomePage() {
     setContent(updated);
   }
 
-  const handleFileChange = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setUploadPreview(result);
-      const [header, base64] = result.split(",");
-      const mediaType = header.match(/data:(.*);base64/)?.[1] ?? "image/jpeg";
-      setUploadData({ base64, mediaType });
-      setAnalyzeError("");
-      setAnalyzeSuccess("");
-    };
-    reader.readAsDataURL(file);
-  }, []);
+  function readFileAsSlot(file: File): Promise<UploadSlot> {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        const [header, base64] = result.split(",");
+        const mediaType = header.match(/data:(.*);base64/)?.[1] ?? "image/jpeg";
+        resolve({ preview: result, base64, mediaType });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileChange(file);
-  }, [handleFileChange]);
+  async function handleSlotFile(file: File, index: number) {
+    if (!file.type.startsWith("image/")) return;
+    const slot = await readFileAsSlot(file);
+    setUploadSlots((prev) => prev.map((s, i) => i === index ? slot : s));
+    setAnalyzeError("");
+    setAnalyzeSuccess("");
+  }
+
+  async function handleSlotFile3(file: File, index: number) {
+    if (!file.type.startsWith("image/")) return;
+    const slot = await readFileAsSlot(file);
+    setUploadSlots3((prev) => prev.map((s, i) => i === index ? slot : s));
+    setAnalyzeError3("");
+  }
 
   async function handleAnalyze() {
-    if (!uploadData) return;
+    const filled = uploadSlots.filter(Boolean) as UploadSlot[];
+    if (filled.length === 0) return;
     setAnalyzing(true);
     setAnalyzeError("");
     try {
       const res = await fetch("/api/analyze-style", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ imageBase64: uploadData.base64, mediaType: uploadData.mediaType }),
+        body: JSON.stringify({ images: filled.map((s) => ({ base64: s.base64, mediaType: s.mediaType })) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "분석 실패");
       const newTemplates = [...customTemplates, data as CardStyleConfig];
       saveCustomTemplates(newTemplates);
       setSelectedId((data as CardStyleConfig).id);
-      setUploadPreview(null);
-      setUploadData(null);
+      setUploadSlots(Array(5).fill(null));
       setAnalyzeSuccess((data as CardStyleConfig).name);
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : "스타일 분석 실패");
@@ -270,35 +279,16 @@ export default function HomePage() {
     }
   }
 
-  const handleFileChange3 = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setUploadPreview3(result);
-      const [header, base64] = result.split(",");
-      const mediaType = header.match(/data:(.*);base64/)?.[1] ?? "image/jpeg";
-      setUploadData3({ base64, mediaType });
-      setAnalyzeError3("");
-    };
-    reader.readAsDataURL(file);
-  }, []);
-
-  const handleDrop3 = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileChange3(file);
-  }, [handleFileChange3]);
-
   async function handleAnalyze3() {
-    if (!uploadData3) return;
+    const filled = uploadSlots3.filter(Boolean) as UploadSlot[];
+    if (filled.length === 0) return;
     setAnalyzing3(true);
     setAnalyzeError3("");
     try {
       const res = await fetch("/api/analyze-style", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ imageBase64: uploadData3.base64, mediaType: uploadData3.mediaType }),
+        body: JSON.stringify({ images: filled.map((s) => ({ base64: s.base64, mediaType: s.mediaType })) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "분석 실패");
@@ -306,8 +296,7 @@ export default function HomePage() {
       saveCustomTemplates(newTemplates);
       setSelectedId((data as CardStyleConfig).id);
       setUploadOpen(false);
-      setUploadPreview3(null);
-      setUploadData3(null);
+      setUploadSlots3(Array(5).fill(null));
     } catch (e) {
       setAnalyzeError3(e instanceof Error ? e.message : "스타일 분석 실패");
     } finally {
@@ -683,43 +672,27 @@ export default function HomePage() {
                 <div>
                   <h3 className="text-sm font-bold text-[#1A1A1A]">
                     🖼️ 레퍼런스 이미지
-                    <span className="text-gray-400 font-normal text-xs ml-1">(선택)</span>
+                    <span className="text-gray-400 font-normal text-xs ml-1">(선택) — 카드 5장 한 세트</span>
                   </h3>
-                  <p className="text-xs text-gray-400 mt-1">마음에 드는 카드뉴스 이미지를 넣으면 색상·스타일을 분석해 새 템플릿을 만들어 드립니다</p>
+                  <p className="text-xs text-gray-400 mt-1">카드뉴스 이미지를 최대 5장 올리면 색상·스타일을 분석해 새 템플릿을 만들어 드립니다</p>
                 </div>
 
-                {!uploadPreview ? (
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-gray-200 hover:border-[#DC2626]/50 rounded-xl py-8 text-center cursor-pointer transition-colors"
+                <MultiUploadGrid
+                  slots={uploadSlots}
+                  onFileSelected={handleSlotFile}
+                  onRemove={(i) => setUploadSlots((prev) => prev.map((s, idx) => idx === i ? null : s))}
+                />
+
+                {analyzeError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{analyzeError}</p>}
+
+                {uploadSlots.some(Boolean) && (
+                  <button
+                    onClick={handleAnalyze}
+                    disabled={analyzing}
+                    className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-xl text-sm font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                   >
-                    <div className="text-3xl mb-2">🖼️</div>
-                    <p className="text-sm text-gray-500 font-medium">이미지 드래그 또는 클릭해서 업로드</p>
-                    <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP 지원</p>
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileChange(f); }} />
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="relative rounded-xl overflow-hidden bg-gray-50 h-44">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={uploadPreview} alt="레퍼런스" className="w-full h-full object-contain" />
-                      <button
-                        onClick={() => { setUploadPreview(null); setUploadData(null); setAnalyzeSuccess(""); }}
-                        className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-black/70"
-                      >×</button>
-                    </div>
-                    {analyzeError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{analyzeError}</p>}
-                    <button
-                      onClick={handleAnalyze}
-                      disabled={analyzing}
-                      className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-xl text-sm font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                    >
-                      {analyzing ? <><Spinner /> 스타일 분석 중...</> : "✨ 이 이미지로 템플릿 만들기"}
-                    </button>
-                  </div>
+                    {analyzing ? <><Spinner /> 스타일 분석 중...</> : `✨ ${uploadSlots.filter(Boolean).length}장으로 템플릿 만들기`}
+                  </button>
                 )}
               </div>
 
@@ -807,7 +780,7 @@ export default function HomePage() {
                   </div>
                 ))}
                 <button
-                  onClick={() => { setUploadOpen(true); setUploadPreview3(null); setUploadData3(null); setAnalyzeError3(""); }}
+                  onClick={() => { setUploadOpen(true); setUploadSlots3(Array(5).fill(null)); setAnalyzeError3(""); }}
                   className="flex flex-col items-center justify-center px-4 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-[#DC2626]/40 hover:bg-red-50/30 text-gray-400 hover:text-[#DC2626] transition-all min-w-[90px]"
                 >
                   <span className="text-xl leading-none mb-0.5">+</span>
@@ -1097,32 +1070,20 @@ export default function HomePage() {
               <h3 className="text-base font-bold text-[#1A1A1A]">레퍼런스 이미지로 템플릿 만들기</h3>
               <button onClick={() => setUploadOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
-            <p className="text-xs text-gray-500">핀터레스트, 인스타그램 등에서 마음에 드는 카드뉴스 이미지를 업로드하면 Claude가 색상과 스타일을 분석해 새 템플릿을 만들어 드립니다.</p>
-            {!uploadPreview3 ? (
-              <div onDrop={handleDrop3} onDragOver={(e) => e.preventDefault()} onClick={() => fileInputRef3.current?.click()}
-                className="border-2 border-dashed border-gray-200 hover:border-[#DC2626]/50 rounded-xl p-10 text-center cursor-pointer transition-colors">
-                <div className="text-4xl mb-3">🖼️</div>
-                <p className="text-sm font-medium text-gray-600">이미지를 드래그하거나 클릭해서 업로드</p>
-                <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP 지원</p>
-                <input ref={fileInputRef3} type="file" accept="image/*" className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileChange3(f); }} />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="relative rounded-xl overflow-hidden bg-gray-50" style={{ height: 200 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={uploadPreview3} alt="레퍼런스" className="w-full h-full object-contain" />
-                  <button onClick={() => { setUploadPreview3(null); setUploadData3(null); }}
-                    className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm hover:bg-black/70">×</button>
-                </div>
-              </div>
-            )}
+            <p className="text-xs text-gray-500">카드뉴스 이미지를 최대 5장(한 세트) 업로드하면 Claude가 색상과 스타일을 분석해 새 템플릿을 만들어 드립니다.</p>
+
+            <MultiUploadGrid
+              slots={uploadSlots3}
+              onFileSelected={handleSlotFile3}
+              onRemove={(i) => setUploadSlots3((prev) => prev.map((s, idx) => idx === i ? null : s))}
+            />
+
             {analyzeError3 && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{analyzeError3}</p>}
             <div className="flex gap-3 justify-end">
               <button onClick={() => setUploadOpen(false)} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">취소</button>
-              <button onClick={handleAnalyze3} disabled={!uploadData3 || analyzing3}
+              <button onClick={handleAnalyze3} disabled={!uploadSlots3.some(Boolean) || analyzing3}
                 className="bg-[#DC2626] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
-                {analyzing3 ? <><Spinner /> 스타일 분석 중...</> : "✨ 템플릿 생성"}
+                {analyzing3 ? <><Spinner /> 스타일 분석 중...</> : `✨ ${uploadSlots3.filter(Boolean).length || ""}장으로 템플릿 생성`}
               </button>
             </div>
           </div>
@@ -1250,6 +1211,67 @@ function Field({ label, value, onChange, multiline }: {
       {multiline
         ? <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className={cls} />
         : <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={cls} />}
+    </div>
+  );
+}
+
+function MultiUploadGrid({ slots, onFileSelected, onRemove }: {
+  slots: (UploadSlot | null)[];
+  onFileSelected: (file: File, index: number) => void;
+  onRemove: (index: number) => void;
+}) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function openPicker(i: number) {
+    setActiveIdx(i);
+    if (fileRef.current) {
+      fileRef.current.value = "";
+      fileRef.current.click();
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-5 gap-2">
+        {slots.map((slot, i) => (
+          <div key={i} className="relative aspect-square">
+            {slot ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={slot.preview}
+                  alt={`카드 ${i + 1}`}
+                  className="w-full h-full object-cover rounded-lg border border-gray-200"
+                />
+                <button
+                  onClick={() => onRemove(i)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs transition-colors"
+                >×</button>
+              </>
+            ) : (
+              <button
+                onClick={() => openPicker(i)}
+                className="w-full h-full border-2 border-dashed border-gray-200 hover:border-[#DC2626]/50 hover:bg-red-50/30 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors"
+              >
+                <span className="text-gray-300 text-xl leading-none">+</span>
+                <span className="text-gray-400 text-[10px]">카드 {i + 1}</span>
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400">{slots.filter(Boolean).length}/5장 업로드됨 · JPG, PNG, WebP 지원</p>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFileSelected(f, activeIdx);
+        }}
+      />
     </div>
   );
 }

@@ -8,16 +8,28 @@ export async function POST(req: NextRequest) {
   if (!apiKey) return missingKeyResponse();
 
   try {
-    const { imageBase64, mediaType } = (await req.json()) as {
-      imageBase64: string;
-      mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+    const { images } = (await req.json()) as {
+      images: Array<{ base64: string; mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" }>;
     };
 
-    if (!imageBase64) {
+    if (!images || images.length === 0) {
       return NextResponse.json({ error: "이미지 데이터가 없습니다." }, { status: 400 });
     }
 
     const client = new Anthropic({ apiKey });
+
+    const imageBlocks = images.map((img) => ({
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: img.mediaType,
+        data: img.base64,
+      },
+    }));
+
+    const introText = images.length > 1
+      ? `아래 ${images.length}장의 이미지는 카드뉴스 한 세트입니다. 전체 세트의 공통 색상, 스타일, 분위기를 종합 분석해서 아래 JSON 형식으로 출력해주세요.`
+      : "이 이미지는 카드뉴스/인스타그램 포스트 디자인 레퍼런스입니다.\n이미지의 색상, 스타일, 분위기를 분석해서 아래 JSON 형식으로 출력해주세요.";
 
     const response = await client.messages.create({
       model: "claude-opus-4-6",
@@ -26,18 +38,10 @@ export async function POST(req: NextRequest) {
         {
           role: "user",
           content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mediaType,
-                data: imageBase64,
-              },
-            },
+            ...imageBlocks,
             {
               type: "text",
-              text: `이 이미지는 카드뉴스/인스타그램 포스트 디자인 레퍼런스입니다.
-이미지의 색상, 스타일, 분위기를 분석해서 아래 JSON 형식으로 출력해주세요.
+              text: `${introText}
 
 분석 기준:
 - 주요 포인트 색상 (가장 눈에 띄는 강조색)
