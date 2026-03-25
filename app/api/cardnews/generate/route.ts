@@ -4,7 +4,6 @@ import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
 interface PowerPageInfo {
   storeName: string;
-  storeNameEn: string;
   address: string;
   menus: string;
   keywords: string;
@@ -84,8 +83,7 @@ export async function POST(req: NextRequest) {
 }
 
 function buildPowerPagePrompt(info: PowerPageInfo): string {
-  const { storeName, storeNameEn, address, menus, keywords, slogan } = info;
-  const enPart = storeNameEn ? `\n영문명: ${storeNameEn}` : "";
+  const { storeName, address, menus, keywords, slogan } = info;
   const keywordPart = keywords ? `\n키워드: ${keywords}` : "";
   const sloganPart = slogan ? `\n슬로건: ${slogan}` : "";
 
@@ -93,19 +91,19 @@ function buildPowerPagePrompt(info: PowerPageInfo): string {
 아래 업체 정보를 바탕으로 대만 여행자 및 현지인을 타겟으로 한 카드뉴스 5장을 생성해주세요.
 
 업체 정보:
-상호명: ${storeName}${enPart}
+상호명: ${storeName}
 주소: ${address}
 대표 메뉴: ${menus}${keywordPart}${sloganPart}
 
 생성 조건:
 1. 모든 텍스트는 繁體中文 (대만 번체 중국어)으로 작성
 2. 상호명은 번체 중국어로 음역/의역하여 표기 (예: 토라슌 → 吐拉順, 대청마루 → 大廳마루)
-3. card5의 subtitle에는 영문 주소 또는 키워드 + 한국어 원문 주소를 간결하게 포함
-4. card2~5는 사진 하단에 한 줄 텍스트로만 표시되므로 각 필드를 짧고 간결하게 작성
-5. card2.title: 대표 메뉴명 번체 번역 (한 줄, 20자 이내)
-6. card3.title: 분위기/특징 핵심 한 줄 (20자 이내)
-7. card4.items의 title: 메뉴명만 짧게 (5자 이내씩), 하단에 "메뉴A · 메뉴B · 메뉴C" 형태로 표시됨
-8. card5.subtitle: 영문 주소 또는 키워드 + 한국 주소 (한 줄)
+3. 상호명(${storeName})을 영문으로 자동 번역/음역할 것 (예: 토라슌 → Torasun, 홍대갈비 → Hongdae Galbi)
+4. card5.subtitle 형식: "영문 상호명 | 영문 키워드 또는 주소" + 줄바꿈 + 한국어 원문 주소 (한 줄로 간결하게)
+5. card2~5는 사진 하단 한 줄 텍스트로만 표시되므로 각 필드를 짧고 간결하게 작성
+6. card2.title: 대표 메뉴명 번체 번역 (20자 이내)
+7. card3.title: 분위기/특징 핵심 한 줄 (20자 이내)
+8. card4.items의 title: 메뉴명만 짧게 (5자 이내씩)
 9. 업체 사진이 제공된 경우 사진 속 분위기·메뉴·인테리어를 텍스트에 반영할 것
 
 JSON 형식으로만 출력하세요. 설명 없이 JSON만:

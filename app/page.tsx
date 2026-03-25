@@ -49,7 +49,6 @@ interface TrendsResult {
 
 interface PowerPageInfo {
   storeName: string;
-  storeNameEn: string;
   address: string;
   menus: string;
   keywords: string;
@@ -70,7 +69,7 @@ export default function HomePage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [powerPage, setPowerPage] = useState(false);
   const [powerPageInfo, setPowerPageInfo] = useState<PowerPageInfo>({
-    storeName: "", storeNameEn: "", address: "", menus: "", keywords: "", slogan: "",
+    storeName: "", address: "", menus: "", keywords: "", slogan: "",
   });
   const [savedPowerPages, setSavedPowerPages] = useState<PowerPagePreset[]>([]);
   const [powerPageImages, setPowerPageImages] = useState<(UploadSlot | null)[]>(Array(5).fill(null));
@@ -155,7 +154,7 @@ export default function HomePage() {
 
   function loadPowerPagePreset(preset: PowerPagePreset) {
     setPowerPageInfo({
-      storeName: preset.storeName, storeNameEn: preset.storeNameEn,
+      storeName: preset.storeName,
       address: preset.address, menus: preset.menus,
       keywords: preset.keywords, slogan: preset.slogan,
     });
@@ -411,7 +410,7 @@ export default function HomePage() {
     setStep(1);
     setTopic("");
     setPowerPage(false);
-    setPowerPageInfo({ storeName: "", storeNameEn: "", address: "", menus: "", keywords: "", slogan: "" });
+    setPowerPageInfo({ storeName: "", address: "", menus: "", keywords: "", slogan: "" });
     setPowerPageImages(Array(5).fill(null));
     setBlogResult(null);
     setError("");
@@ -638,10 +637,7 @@ export default function HomePage() {
 
                     {/* 업체 정보 폼 */}
                     <div className="space-y-3 border border-orange-100 rounded-xl p-4 bg-orange-50/30">
-                      <div className="grid grid-cols-2 gap-3">
-                        <PPField label="상호명 *" placeholder="예: 토라슌" value={powerPageInfo.storeName} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, storeName: v })} />
-                        <PPField label="영문명 (선택)" placeholder="예: Torasun" value={powerPageInfo.storeNameEn} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, storeNameEn: v })} />
-                      </div>
+                      <PPField label="상호명 *" placeholder="예: 토라슌" value={powerPageInfo.storeName} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, storeName: v })} />
                       <PPField label="주소 *" placeholder="예: 마포구 와우산로29마길 10-4" value={powerPageInfo.address} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, address: v })} />
                       <PPField label="대표 메뉴 *" placeholder="예: 삼겹살, 소금구이, 불백 (쉼표 구분)" value={powerPageInfo.menus} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, menus: v })} />
                       <PPField label="키워드 / 해시태그" placeholder="예: 맛집, 홍대, 고기집, 한국식당" value={powerPageInfo.keywords} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, keywords: v })} />
