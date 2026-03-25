@@ -38,6 +38,7 @@ const BUILTIN_TEMPLATES = [
 
 const STORAGE_KEY = "tianxia_custom_templates";
 const API_KEY_STORAGE = "tianxia_api_key";
+const POWER_PAGE_STORAGE_KEY = "tianxia_power_pages";
 
 interface TrendsResult {
   suggestions: string[];
@@ -45,9 +46,26 @@ interface TrendsResult {
   fetchedAt: string;
 }
 
+interface PowerPageInfo {
+  storeName: string;
+  storeNameEn: string;
+  address: string;
+  menus: string;
+  keywords: string;
+  slogan: string;
+}
+
+interface PowerPagePreset extends PowerPageInfo {
+  id: string;
+}
+
 export default function HomePage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [powerPage, setPowerPage] = useState(false);
+  const [powerPageInfo, setPowerPageInfo] = useState<PowerPageInfo>({
+    storeName: "", storeNameEn: "", address: "", menus: "", keywords: "", slogan: "",
+  });
+  const [savedPowerPages, setSavedPowerPages] = useState<PowerPagePreset[]>([]);
 
   const [topic, setTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -100,6 +118,10 @@ export default function HomePage() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) setCustomTemplates(JSON.parse(saved));
     } catch { /* ignore */ }
+    try {
+      const savedPP = localStorage.getItem(POWER_PAGE_STORAGE_KEY);
+      if (savedPP) setSavedPowerPages(JSON.parse(savedPP));
+    } catch { /* ignore */ }
     const savedKey = localStorage.getItem(API_KEY_STORAGE) ?? "";
     setApiKey(savedKey);
     setApiKeyInput(savedKey);
@@ -111,6 +133,28 @@ export default function HomePage() {
     setApiKey(trimmed);
     try { localStorage.setItem(API_KEY_STORAGE, trimmed); } catch { /* ignore */ }
     setSettingsOpen(false);
+  }
+
+  function savePowerPagePreset() {
+    if (!powerPageInfo.storeName.trim()) return;
+    const preset: PowerPagePreset = { ...powerPageInfo, id: `pp_${Date.now()}` };
+    const updated = [...savedPowerPages, preset];
+    setSavedPowerPages(updated);
+    try { localStorage.setItem(POWER_PAGE_STORAGE_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
+  }
+
+  function deletePowerPagePreset(id: string) {
+    const updated = savedPowerPages.filter((p) => p.id !== id);
+    setSavedPowerPages(updated);
+    try { localStorage.setItem(POWER_PAGE_STORAGE_KEY, JSON.stringify(updated)); } catch { /* ignore */ }
+  }
+
+  function loadPowerPagePreset(preset: PowerPagePreset) {
+    setPowerPageInfo({
+      storeName: preset.storeName, storeNameEn: preset.storeNameEn,
+      address: preset.address, menus: preset.menus,
+      keywords: preset.keywords, slogan: preset.slogan,
+    });
   }
 
   function apiHeaders(): Record<string, string> {
@@ -150,7 +194,7 @@ export default function HomePage() {
       const res = await fetch("/api/cardnews/generate", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ topic, powerPage }),
+        body: JSON.stringify({ topic, powerPage, powerPageInfo }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "생성 오류");
@@ -362,6 +406,7 @@ export default function HomePage() {
     setStep(1);
     setTopic("");
     setPowerPage(false);
+    setPowerPageInfo({ storeName: "", storeNameEn: "", address: "", menus: "", keywords: "", slogan: "" });
     setBlogResult(null);
     setError("");
     setEditOpen(false);
@@ -542,18 +587,54 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2.5 py-1 rounded-full">📸 파워페이지 모드</span>
-                    <span className="text-xs text-gray-400">주제 없이 진행 중</span>
-                    <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-[#DC2626] underline underline-offset-2 transition-colors ml-auto">← 처음으로</button>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2.5 py-1 rounded-full">📸 파워페이지 모드 — 번체 중문 생성</span>
+                      <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-[#DC2626] underline underline-offset-2 transition-colors">← 처음으로</button>
+                    </div>
+
+                    {/* 저장된 업체 프리셋 */}
+                    {savedPowerPages.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-gray-500">저장된 업체</p>
+                        <div className="flex flex-wrap gap-2">
+                          {savedPowerPages.map((p) => (
+                            <div key={p.id} className="flex items-center gap-1 group">
+                              <button
+                                onClick={() => loadPowerPagePreset(p)}
+                                className="text-xs bg-gray-100 hover:bg-[#DC2626] hover:text-white text-gray-700 px-3 py-1.5 rounded-full transition-colors font-medium"
+                              >
+                                {p.storeName}
+                              </button>
+                              <button
+                                onClick={() => deletePowerPagePreset(p.id)}
+                                className="hidden group-hover:flex w-4 h-4 bg-gray-300 hover:bg-red-500 text-white rounded-full items-center justify-center text-xs transition-colors -ml-0.5"
+                              >×</button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 업체 정보 폼 */}
+                    <div className="space-y-3 border border-orange-100 rounded-xl p-4 bg-orange-50/30">
+                      <div className="grid grid-cols-2 gap-3">
+                        <PPField label="상호명 *" placeholder="예: 토라슌" value={powerPageInfo.storeName} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, storeName: v })} />
+                        <PPField label="영문명 (선택)" placeholder="예: Torasun" value={powerPageInfo.storeNameEn} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, storeNameEn: v })} />
+                      </div>
+                      <PPField label="주소 *" placeholder="예: 마포구 와우산로29마길 10-4" value={powerPageInfo.address} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, address: v })} />
+                      <PPField label="대표 메뉴 *" placeholder="예: 삼겹살, 소금구이, 불백 (쉼표 구분)" value={powerPageInfo.menus} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, menus: v })} />
+                      <PPField label="키워드 / 해시태그" placeholder="예: 맛집, 홍대, 고기집, 한국식당" value={powerPageInfo.keywords} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, keywords: v })} />
+                      <PPField label="슬로건 (선택)" placeholder="예: 홍대에서 꼭 먹어야 할 고기 맛집!" value={powerPageInfo.slogan} onChange={(v) => setPowerPageInfo({ ...powerPageInfo, slogan: v })} />
+                      <button
+                        onClick={savePowerPagePreset}
+                        disabled={!powerPageInfo.storeName.trim()}
+                        className="text-xs bg-white border border-gray-200 hover:border-[#DC2626] hover:text-[#DC2626] text-gray-500 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        + 이 업체 저장
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    type="text"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    placeholder="주제 입력 (선택사항)"
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/30 focus:border-[#DC2626]"
-                  />
                 </div>
               )}
 
@@ -657,10 +738,10 @@ export default function HomePage() {
                 </button>
                 <button
                   onClick={handleGenerate}
-                  disabled={loading}
-                  className="bg-[#DC2626] text-white px-8 py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                  disabled={loading || (powerPage && (!powerPageInfo.storeName.trim() || !powerPageInfo.address.trim() || !powerPageInfo.menus.trim()))}
+                  className="bg-[#DC2626] text-white px-8 py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
-                  카드뉴스 생성
+                  {powerPage ? "파워페이지 생성 (中文)" : "카드뉴스 생성"}
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l14 9-14 9V3z" />
                   </svg>
@@ -1139,6 +1220,23 @@ function TemplateBtn({ name, desc, active, onClick, accent }: {
       </div>
       <span className="text-xs text-gray-400 mt-0.5">{desc}</span>
     </button>
+  );
+}
+
+function PPField({ label, placeholder, value, onChange }: {
+  label: string; placeholder: string; value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-gray-500">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full border border-gray-200 bg-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300/50 focus:border-orange-400"
+      />
+    </div>
   );
 }
 
