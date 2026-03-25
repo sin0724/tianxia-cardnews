@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { CardStyleConfig } from "@/components/DynamicCards";
-import { getApiKey, missingKeyResponse } from "@/lib/getApiKey";
+import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
@@ -83,7 +83,6 @@ JSON만 출력하세요 (설명 없이):
 
     return NextResponse.json(config);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "스타일 분석 실패";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: friendlyError(e) }, { status: 500 });
   }
 }

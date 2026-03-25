@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getApiKey, missingKeyResponse } from "@/lib/getApiKey";
+import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
 // Google News 대만 RSS 엔드포인트
 const NEWS_FEEDS = [
@@ -58,8 +58,7 @@ JSON 배열만 출력하세요 (설명 없이):
       fetchedAt: new Date().toISOString(),
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "트렌드 불러오기 실패";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: friendlyError(e) }, { status: 500 });
   }
 }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getApiKey, missingKeyResponse } from "@/lib/getApiKey";
+import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
@@ -79,7 +79,6 @@ JSON 형식으로만 출력하세요. 설명 없이 JSON만:
 
     return NextResponse.json(JSON.parse(jsonMatch[0]));
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "알 수 없는 오류";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: friendlyError(e) }, { status: 500 });
   }
 }

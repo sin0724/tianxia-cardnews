@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { CardNewsContent } from "@/components/CardTemplates";
-import { getApiKey, missingKeyResponse } from "@/lib/getApiKey";
+import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
@@ -71,7 +71,6 @@ ${cardSummary}
     const parsed = JSON.parse(jsonMatch[0]);
     return NextResponse.json(parsed);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "블로그 원고 생성 실패";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: friendlyError(e) }, { status: 500 });
   }
 }
