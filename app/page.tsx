@@ -47,6 +47,7 @@ interface TrendsResult {
 
 export default function HomePage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [powerPage, setPowerPage] = useState(false);
 
   const [topic, setTopic] = useState("");
   const [loading, setLoading] = useState(false);
@@ -149,7 +150,7 @@ export default function HomePage() {
       const res = await fetch("/api/cardnews/generate", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ topic, powerPage }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "생성 오류");
@@ -360,6 +361,7 @@ export default function HomePage() {
     setCaption("");
     setStep(1);
     setTopic("");
+    setPowerPage(false);
     setBlogResult(null);
     setError("");
     setEditOpen(false);
@@ -446,7 +448,7 @@ export default function HomePage() {
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && topic.trim() && setStep(2)}
+                onKeyDown={(e) => e.key === "Enter" && topic.trim() && (setPowerPage(false), setStep(2))}
                 placeholder="예: 대만 MZ세대 소비 트렌드 2024"
                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/30 focus:border-[#DC2626]"
                 autoFocus
@@ -498,7 +500,7 @@ export default function HomePage() {
 
               <div className="flex justify-end pt-2">
                 <button
-                  onClick={() => setStep(2)}
+                  onClick={() => { setPowerPage(false); setStep(2); }}
                   disabled={!topic.trim()}
                   className="bg-[#DC2626] text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                 >
@@ -518,7 +520,7 @@ export default function HomePage() {
 
               {/* 파워페이지 버튼 */}
               <button
-                onClick={() => { setTopic(""); setStep(2); }}
+                onClick={() => { setTopic(""); setPowerPage(true); setStep(2); }}
                 className="w-full border-2 border-dashed border-gray-200 hover:border-[#DC2626]/50 hover:bg-red-50/40 rounded-xl py-4 text-center transition-all group"
               >
                 <div className="text-2xl mb-1">📸</div>

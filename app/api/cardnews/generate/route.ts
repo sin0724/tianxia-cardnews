@@ -6,10 +6,22 @@ export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
   if (!apiKey) return missingKeyResponse();
 
-  const { topic } = await req.json();
-  const effectiveTopic = topic?.trim() || "광고주 제품 홍보 카드뉴스";
+  const { topic, powerPage } = await req.json();
+  const effectiveTopic = topic?.trim() || "廣告主商品推廣";
 
   const client = new Anthropic({ apiKey });
+
+  const langInstruction = powerPage
+    ? `타겟: 대만 현지 소비자 (일반 대중)
+언어: 繁體中文 (대만 번체 중국어) — 모든 텍스트를 번체 중국어로 작성
+톤: 친근하고 매력적인 대만 현지 소비자 어조`
+    : `타겟: 대만 진출에 관심 있는 한국 브랜드 담당자 / 광고주
+언어: 한국어
+톤: 전문적이고 신뢰감 있으면서도 접근하기 쉬운 어조`;
+
+  const captionInstruction = powerPage
+    ? `"caption": "인스타그램 본문 캡션 150자 이내, 繁體中文으로 작성, 대만 소비자 공감 유도, 이모지 1~2개"`
+    : `"caption": "인스타그램 본문 캡션 150자 이내, 실무 담당자 공감 유도, 이모지 1~2개"`;
 
   try {
     const response = await client.messages.create({
@@ -22,9 +34,7 @@ export async function POST(req: NextRequest) {
 
 주제: ${effectiveTopic}
 
-타겟: 대만 진출에 관심 있는 한국 브랜드 담당자 / 광고주
-언어: 한국어
-톤: 전문적이고 신뢰감 있으면서도 접근하기 쉬운 어조
+${langInstruction}
 구성: 총 5장 카드뉴스
 
 JSON 형식으로만 출력하세요. 설명 없이 JSON만:
@@ -64,7 +74,7 @@ JSON 형식으로만 출력하세요. 설명 없이 JSON만:
     "subtitle": "대만 마케팅 실무 정보를 꾸준히 공유드려요.",
     "cta": "저장하기"
   },
-  "caption": "인스타그램 본문 캡션 150자 이내, 실무 담당자 공감 유도, 이모지 1~2개"
+  ${captionInstruction}
 }`,
         },
       ],
