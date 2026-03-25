@@ -7,9 +7,7 @@ export async function POST(req: NextRequest) {
   if (!apiKey) return missingKeyResponse();
 
   const { topic } = await req.json();
-  if (!topic?.trim()) {
-    return NextResponse.json({ error: "주제를 입력해주세요." }, { status: 400 });
-  }
+  const effectiveTopic = topic?.trim() || "광고주 제품 홍보 카드뉴스";
 
   const client = new Anthropic({ apiKey });
 
@@ -22,7 +20,7 @@ export async function POST(req: NextRequest) {
           role: "user",
           content: `대만 마케팅 전문 에이전시 TIANXIA의 인스타그램 카드뉴스 콘텐츠를 생성해주세요.
 
-주제: ${topic}
+주제: ${effectiveTopic}
 
 타겟: 대만 진출에 관심 있는 한국 브랜드 담당자 / 광고주
 언어: 한국어

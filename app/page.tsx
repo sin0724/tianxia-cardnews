@@ -140,7 +140,6 @@ export default function HomePage() {
   }
 
   async function handleGenerate() {
-    if (!topic.trim()) { setError("주제를 입력해주세요."); return; }
     setError("");
     setLoading(true);
     setContent(null);
@@ -509,6 +508,23 @@ export default function HomePage() {
                   </svg>
                 </button>
               </div>
+
+              {/* 구분선 */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-gray-100" />
+                <span className="text-xs text-gray-400 font-medium">또는</span>
+                <div className="flex-1 h-px bg-gray-100" />
+              </div>
+
+              {/* 파워페이지 버튼 */}
+              <button
+                onClick={() => { setTopic(""); setStep(2); }}
+                className="w-full border-2 border-dashed border-gray-200 hover:border-[#DC2626]/50 hover:bg-red-50/40 rounded-xl py-4 text-center transition-all group"
+              >
+                <div className="text-2xl mb-1">📸</div>
+                <p className="text-sm font-bold text-gray-700 group-hover:text-[#DC2626] transition-colors">파워페이지 카드뉴스 제작</p>
+                <p className="text-xs text-gray-400 mt-0.5">광고주 이미지로 주제 없이 바로 템플릿 선택</p>
+              </button>
             </section>
           )}
 
@@ -516,11 +532,28 @@ export default function HomePage() {
           {step === 2 && (
             <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-7">
               {/* 주제 표시 */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">선택한 주제</span>
-                <span className="bg-[#DC2626]/10 text-[#DC2626] font-semibold text-sm px-3 py-1 rounded-full">{topic}</span>
-                <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-[#DC2626] underline underline-offset-2 transition-colors">수정</button>
-              </div>
+              {topic ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-400">선택한 주제</span>
+                  <span className="bg-[#DC2626]/10 text-[#DC2626] font-semibold text-sm px-3 py-1 rounded-full">{topic}</span>
+                  <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-[#DC2626] underline underline-offset-2 transition-colors">수정</button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2.5 py-1 rounded-full">📸 파워페이지 모드</span>
+                    <span className="text-xs text-gray-400">주제 없이 진행 중</span>
+                    <button onClick={() => setStep(1)} className="text-xs text-gray-400 hover:text-[#DC2626] underline underline-offset-2 transition-colors ml-auto">← 처음으로</button>
+                  </div>
+                  <input
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="주제 입력 (선택사항)"
+                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/30 focus:border-[#DC2626]"
+                  />
+                </div>
+              )}
 
               {/* 템플릿 선택 */}
               <div className="space-y-3">
@@ -663,8 +696,14 @@ export default function HomePage() {
               새로 만들기
             </button>
             <span className="text-xs text-gray-300">|</span>
-            <span className="text-xs text-gray-400">주제</span>
-            <span className="text-sm font-semibold text-[#1A1A1A]">{topic}</span>
+            {topic ? (
+              <>
+                <span className="text-xs text-gray-400">주제</span>
+                <span className="text-sm font-semibold text-[#1A1A1A]">{topic}</span>
+              </>
+            ) : (
+              <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2.5 py-1 rounded-full">📸 파워페이지</span>
+            )}
           </div>
 
           {/* 템플릿 (compact) */}
