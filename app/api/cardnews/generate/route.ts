@@ -98,8 +98,10 @@ function buildPowerPagePrompt(info: PowerPageInfo): string {
 생성 조건:
 1. 모든 텍스트는 繁體中文 (대만 번체 중국어)으로 작성
 2. 상호명은 번체 중국어로 음역/의역하여 표기 (예: 토라슌 → 吐拉順, 대청마루 → 大廳마루)
-3. 상호명(${storeName})을 영문으로 자동 번역/음역할 것 (예: 토라슌 → Torasun, 홍대갈비 → Hongdae Galbi)
-4. card5.subtitle 형식: "영문 상호명 | 영문 키워드 또는 주소" + 줄바꿈 + 한국어 원문 주소 (한 줄로 간결하게)
+3. 상호명(${storeName})과 주소(${address}) 모두 영문으로 자동 번역/음역할 것
+   - 상호명: 발음 기반 영문 음역 (예: 토라슌 → Torasun, 홍대갈비 → Hongdae Galbi)
+   - 주소: 도로명/지역명 영문 변환 (예: 마포구 와우산로 10 → 10 Wausan-ro, Mapo-gu, Seoul)
+4. card5.subtitle 형식 (한 줄): "영문 상호명  ·  영문 주소"
 5. card2~5는 사진 하단 한 줄 텍스트로만 표시되므로 각 필드를 짧고 간결하게 작성
 6. card2.title: 대표 메뉴명 번체 번역 (20자 이내)
 7. card3.title: 분위기/특징 핵심 한 줄 (20자 이내)
