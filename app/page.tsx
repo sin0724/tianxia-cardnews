@@ -8,6 +8,8 @@ import {
   type CardNewsContent,
 } from "@/components/CardTemplates";
 import { Card1B, Card2B, Card3B, Card4B, Card5B } from "@/components/CardTemplatesB";
+import { Card1C, Card2C, Card3C, Card4C, Card5C } from "@/components/CardTemplatesC";
+import { Card1D, Card2D, Card3D, Card4D, Card5D } from "@/components/CardTemplatesD";
 import {
   DynCard1, DynCard2, DynCard3, DynCard4, DynCard5,
   type CardStyleConfig,
@@ -35,6 +37,8 @@ type EditTab = typeof EDIT_TABS[number];
 const BUILTIN_TEMPLATES = [
   { id: "A", name: "레드 클래식", desc: "풀 컬러 배경", primary: "#DC2626", secondary: "#1A1A1A" },
   { id: "B", name: "에디토리얼", desc: "화이트 기반 편집체", primary: "#1A1A1A", secondary: "#E8E8E8" },
+  { id: "C", name: "다이나믹 타이포", desc: "다크·하단집중·스텝형", primary: "#0D0D0D", secondary: "#DC2626" },
+  { id: "D", name: "클린 레이아웃", desc: "상단집중·스플릿·번호형", primary: "#FFFFFF", secondary: "#DC2626" },
 ] as const;
 
 const STORAGE_KEY = "tianxia_custom_templates";
@@ -454,6 +458,24 @@ export default function HomePage() {
         case 2: return <Card3B data={content.card3} {...props} />;
         case 3: return <Card4B data={content.card4} {...props} />;
         case 4: return <Card5B data={content.card5} {...props} />;
+      }
+    }
+    if (selectedId === "C") {
+      switch (i) {
+        case 0: return <Card1C data={content.card1} {...props} />;
+        case 1: return <Card2C data={content.card2} {...props} />;
+        case 2: return <Card3C data={content.card3} {...props} />;
+        case 3: return <Card4C data={content.card4} {...props} />;
+        case 4: return <Card5C data={content.card5} {...props} />;
+      }
+    }
+    if (selectedId === "D") {
+      switch (i) {
+        case 0: return <Card1D data={content.card1} {...props} />;
+        case 1: return <Card2D data={content.card2} {...props} />;
+        case 2: return <Card3D data={content.card3} {...props} />;
+        case 3: return <Card4D data={content.card4} {...props} />;
+        case 4: return <Card5D data={content.card5} {...props} />;
       }
     }
     switch (i) {
