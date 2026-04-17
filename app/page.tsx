@@ -1109,13 +1109,13 @@ export default function HomePage() {
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-gray-500">본문 (마크다운)</label>
+                    <label className="text-xs font-semibold text-gray-500">본문</label>
                     <span className="text-xs text-gray-400">{blogResult.content.length}자</span>
                   </div>
                   <textarea value={blogResult.content}
                     onChange={(e) => setBlogResult({ ...blogResult, content: e.target.value })}
                     rows={18}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] resize-none font-mono leading-relaxed" />
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] resize-none leading-relaxed" />
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-gray-500">SEO 태그</label>
