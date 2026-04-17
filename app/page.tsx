@@ -96,12 +96,16 @@ export default function HomePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
   const [analyzeSuccess, setAnalyzeSuccess] = useState("");
+  const [lastCreatedTemplate, setLastCreatedTemplate] = useState<CardStyleConfig | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
 
   // Step 3 모달 레퍼런스 업로드
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadSlots3, setUploadSlots3] = useState<(UploadSlot | null)[]>(Array(5).fill(null));
   const [analyzing3, setAnalyzing3] = useState(false);
   const [analyzeError3, setAnalyzeError3] = useState("");
+  const [analyzeSuccess3, setAnalyzeSuccess3] = useState("");
 
   const [apiKey, setApiKey] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -286,11 +290,22 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "분석 실패");
-      const newTemplates = [...customTemplates, data as CardStyleConfig];
-      saveCustomTemplates(newTemplates);
-      setSelectedId((data as CardStyleConfig).id);
+      const newConfig = data as CardStyleConfig;
+      const existingIdx = customTemplates.findIndex((t) => t.name === newConfig.name);
+      let finalId: string;
+      let finalTemplates: CardStyleConfig[];
+      if (existingIdx >= 0) {
+        finalId = customTemplates[existingIdx].id;
+        finalTemplates = customTemplates.map((t, i) => i === existingIdx ? { ...newConfig, id: finalId } : t);
+      } else {
+        finalId = newConfig.id;
+        finalTemplates = [...customTemplates, newConfig];
+      }
+      saveCustomTemplates(finalTemplates);
+      setSelectedId(finalId);
+      setLastCreatedTemplate(newConfig);
       setUploadSlots(Array(5).fill(null));
-      setAnalyzeSuccess((data as CardStyleConfig).name);
+      setAnalyzeSuccess(newConfig.name);
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : "스타일 분석 실패");
     } finally {
@@ -311,11 +326,25 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "분석 실패");
-      const newTemplates = [...customTemplates, data as CardStyleConfig];
-      saveCustomTemplates(newTemplates);
-      setSelectedId((data as CardStyleConfig).id);
-      setUploadOpen(false);
+      const newConfig = data as CardStyleConfig;
+      const existingIdx3 = customTemplates.findIndex((t) => t.name === newConfig.name);
+      let finalId3: string;
+      let finalTemplates3: CardStyleConfig[];
+      if (existingIdx3 >= 0) {
+        finalId3 = customTemplates[existingIdx3].id;
+        finalTemplates3 = customTemplates.map((t, i) => i === existingIdx3 ? { ...newConfig, id: finalId3 } : t);
+      } else {
+        finalId3 = newConfig.id;
+        finalTemplates3 = [...customTemplates, newConfig];
+      }
+      saveCustomTemplates(finalTemplates3);
+      setSelectedId(finalId3);
       setUploadSlots3(Array(5).fill(null));
+      setAnalyzeSuccess3(newConfig.name);
+      setTimeout(() => {
+        setUploadOpen(false);
+        setAnalyzeSuccess3("");
+      }, 2000);
     } catch (e) {
       setAnalyzeError3(e instanceof Error ? e.message : "스타일 분석 실패");
     } finally {
@@ -367,6 +396,20 @@ export default function HomePage() {
     const updated = customTemplates.filter((t) => t.id !== id);
     saveCustomTemplates(updated);
     if (selectedId === id) setSelectedId("A");
+  }
+
+  function handleRenameTemplate(id: string, newName: string) {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const updated = customTemplates.map((t) => t.id === id ? { ...t, name: trimmed } : t);
+    saveCustomTemplates(updated);
+    setEditingTemplateId(null);
+  }
+
+  function startEditTemplateName(id: string, currentName: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditingTemplateId(id);
+    setEditingName(currentName);
   }
 
   async function handleDownload() {
@@ -722,24 +765,65 @@ export default function HomePage() {
                     />
                   ))}
                   {customTemplates.map((t) => (
-                    <div key={t.id} className="relative group">
-                      <TemplateCard
-                        name={t.name}
-                        desc="레퍼런스 분석"
-                        primary={t.primary}
-                        secondary={t.darkCardBg}
-                        active={selectedId === t.id}
-                        onClick={() => setSelectedId(t.id)}
-                      />
+                    <div key={t.id} className="relative">
+                      {editingTemplateId === t.id ? (
+                        <div className={`rounded-xl border-2 overflow-hidden ${selectedId === t.id ? "border-[#DC2626]" : "border-gray-200"}`}>
+                          <div className="h-14 flex">
+                            <div className="flex-1" style={{ background: t.primary }} />
+                            <div className="flex-1" style={{ background: t.darkCardBg }} />
+                            <div className="flex-1 bg-white border-l border-black/5" />
+                          </div>
+                          <div className="p-3 bg-white space-y-2">
+                            <input
+                              autoFocus
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleRenameTemplate(t.id, editingName);
+                                if (e.key === "Escape") setEditingTemplateId(null);
+                              }}
+                              className="w-full text-sm font-bold border border-[#DC2626]/50 rounded-lg px-2 py-1 focus:outline-none focus:border-[#DC2626]"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <div className="flex gap-1.5">
+                              <button onClick={() => handleRenameTemplate(t.id, editingName)} className="text-xs bg-[#DC2626] text-white px-2.5 py-1 rounded-lg font-semibold">저장</button>
+                              <button onClick={() => setEditingTemplateId(null)} className="text-xs bg-gray-100 text-gray-500 px-2.5 py-1 rounded-lg">취소</button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <TemplateCard
+                          name={t.name}
+                          desc="레퍼런스 분석"
+                          primary={t.primary}
+                          secondary={t.darkCardBg}
+                          active={selectedId === t.id}
+                          onClick={() => setSelectedId(t.id)}
+                          onEditName={(e) => startEditTemplateName(t.id, t.name, e)}
+                        />
+                      )}
                       <button
                         onClick={() => handleDeleteCustom(t.id)}
-                        className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-5 h-5 bg-gray-400 hover:bg-red-500 text-white rounded-full items-center justify-center text-xs transition-colors"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs transition-colors opacity-70 hover:opacity-100"
                       >×</button>
                     </div>
                   ))}
                 </div>
                 {analyzeSuccess && (
-                  <p className="text-xs text-green-600 bg-green-50 rounded-lg px-3 py-2">✅ &apos;{analyzeSuccess}&apos; 템플릿이 추가되어 선택됐어요!</p>
+                  <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2.5 space-y-2">
+                    <p className="text-xs text-green-700 font-semibold">✅ &apos;{analyzeSuccess}&apos; 템플릿이 추가됐어요!</p>
+                    {lastCreatedTemplate && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex rounded overflow-hidden border border-green-200 h-6 flex-shrink-0">
+                          <div className="w-7" style={{ background: lastCreatedTemplate.coverBg }} />
+                          <div className="w-7" style={{ background: lastCreatedTemplate.darkCardBg }} />
+                          <div className="w-7" style={{ background: lastCreatedTemplate.lightCardBg }} />
+                          <div className="w-7" style={{ background: lastCreatedTemplate.primary }} />
+                        </div>
+                        <span className="text-xs text-green-600">커버 · 다크 · 라이트 · 포인트 색상</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>}
 
@@ -844,19 +928,19 @@ export default function HomePage() {
               <span className="text-sm font-bold text-[#1A1A1A] mt-2.5">🎨 템플릿</span>
               <div className="flex flex-wrap gap-2 flex-1">
                 {BUILTIN_TEMPLATES.map((t) => (
-                  <TemplateBtn key={t.id} name={t.name} desc={t.desc} active={selectedId === t.id} onClick={() => setSelectedId(t.id)} />
+                  <TemplateBtn key={t.id} name={t.name} desc={t.desc} active={selectedId === t.id} onClick={() => setSelectedId(t.id)} primary={t.primary} secondary={t.secondary} />
                 ))}
                 {customTemplates.map((t) => (
-                  <div key={t.id} className="relative group">
-                    <TemplateBtn name={t.name} desc="레퍼런스 분석" active={selectedId === t.id} onClick={() => setSelectedId(t.id)} accent={t.primary} />
+                  <div key={t.id} className="relative">
+                    <TemplateBtn name={t.name} desc="레퍼런스 분석" active={selectedId === t.id} onClick={() => setSelectedId(t.id)} primary={t.primary} secondary={t.darkCardBg} />
                     <button
                       onClick={() => handleDeleteCustom(t.id)}
-                      className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-5 h-5 bg-gray-400 hover:bg-red-500 text-white rounded-full items-center justify-center text-xs transition-colors"
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs transition-colors opacity-60 hover:opacity-100"
                     >×</button>
                   </div>
                 ))}
                 <button
-                  onClick={() => { setUploadOpen(true); setUploadSlots3(Array(5).fill(null)); setAnalyzeError3(""); }}
+                  onClick={() => { setUploadOpen(true); setUploadSlots3(Array(5).fill(null)); setAnalyzeError3(""); setAnalyzeSuccess3(""); }}
                   className="flex flex-col items-center justify-center px-4 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-[#DC2626]/40 hover:bg-red-50/30 text-gray-400 hover:text-[#DC2626] transition-all min-w-[90px]"
                 >
                   <span className="text-xl leading-none mb-0.5">+</span>
@@ -1140,11 +1224,11 @@ export default function HomePage() {
       {/* Step 3 레퍼런스 추가 모달 */}
       {uploadOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setUploadOpen(false); }}>
+          onClick={(e) => { if (e.target === e.currentTarget && !analyzeSuccess3) setUploadOpen(false); }}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-[#1A1A1A]">레퍼런스 이미지로 템플릿 만들기</h3>
-              <button onClick={() => setUploadOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              {!analyzeSuccess3 && <button onClick={() => setUploadOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>}
             </div>
             <p className="text-xs text-gray-500">카드뉴스 이미지를 최대 5장(한 세트) 업로드하면 Claude가 색상과 스타일을 분석해 새 템플릿을 만들어 드립니다.</p>
 
@@ -1155,13 +1239,20 @@ export default function HomePage() {
             />
 
             {analyzeError3 && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{analyzeError3}</p>}
-            <div className="flex gap-3 justify-end">
-              <button onClick={() => setUploadOpen(false)} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">취소</button>
-              <button onClick={handleAnalyze3} disabled={!uploadSlots3.some(Boolean) || analyzing3}
-                className="bg-[#DC2626] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
-                {analyzing3 ? <><Spinner /> 스타일 분석 중...</> : `✨ ${uploadSlots3.filter(Boolean).length || ""}장으로 템플릿 생성`}
-              </button>
-            </div>
+            {analyzeSuccess3 ? (
+              <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 text-center space-y-1">
+                <p className="text-sm text-green-700 font-bold">✅ 템플릿 생성 완료!</p>
+                <p className="text-xs text-green-600">&apos;{analyzeSuccess3}&apos; 템플릿이 선택됐습니다. 잠시 후 창이 닫힙니다.</p>
+              </div>
+            ) : (
+              <div className="flex gap-3 justify-end">
+                <button onClick={() => setUploadOpen(false)} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">취소</button>
+                <button onClick={handleAnalyze3} disabled={!uploadSlots3.some(Boolean) || analyzing3}
+                  className="bg-[#DC2626] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
+                  {analyzing3 ? <><Spinner /> 스타일 분석 중...</> : `✨ ${uploadSlots3.filter(Boolean).length || ""}장으로 템플릿 생성`}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1206,8 +1297,8 @@ function StepsBar({ step }: { step: number }) {
   );
 }
 
-function TemplateCard({ name, desc, primary, secondary, active, onClick }: {
-  name: string; desc: string; primary: string; secondary: string; active: boolean; onClick: () => void;
+function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditName }: {
+  name: string; desc: string; primary: string; secondary: string; active: boolean; onClick: () => void; onEditName?: (e: React.MouseEvent) => void;
 }) {
   return (
     <button onClick={onClick}
@@ -1219,12 +1310,25 @@ function TemplateCard({ name, desc, primary, secondary, active, onClick }: {
       </div>
       <div className="p-3 bg-white">
         <div className="flex items-center justify-between">
-          <div>
-            <p className={`text-sm font-bold ${active ? "text-[#DC2626]" : "text-gray-700"}`}>{name}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className={`text-sm font-bold truncate ${active ? "text-[#DC2626]" : "text-gray-700"}`}>{name}</p>
+              {onEditName && (
+                <button
+                  onClick={onEditName}
+                  className="flex-shrink-0 text-gray-300 hover:text-gray-500 transition-colors"
+                  title="이름 수정"
+                >
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
           </div>
           {active && (
-            <div className="w-5 h-5 bg-[#DC2626] rounded-full flex items-center justify-center flex-shrink-0">
+            <div className="w-5 h-5 bg-[#DC2626] rounded-full flex items-center justify-center flex-shrink-0 ml-2">
               <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
@@ -1245,17 +1349,23 @@ function Spinner({ size = 16 }: { size?: number }) {
   );
 }
 
-function TemplateBtn({ name, desc, active, onClick, accent }: {
-  name: string; desc: string; active: boolean; onClick: () => void; accent?: string;
+function TemplateBtn({ name, desc, active, onClick, primary, secondary }: {
+  name: string; desc: string; active: boolean; onClick: () => void; primary?: string; secondary?: string;
 }) {
   return (
     <button onClick={onClick}
-      className={`flex flex-col items-start px-4 py-2.5 rounded-xl border text-left transition-all ${active ? "border-[#DC2626] bg-red-50" : "border-gray-200 hover:border-gray-300 bg-white"}`}>
-      <div className="flex items-center gap-2">
-        {accent && <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: accent }} />}
+      className={`flex flex-col items-start rounded-xl border text-left transition-all overflow-hidden min-w-[90px] ${active ? "border-[#DC2626] shadow-md shadow-red-100" : "border-gray-200 hover:border-gray-300 bg-white"}`}>
+      {(primary || secondary) && (
+        <div className="w-full h-7 flex">
+          <div className="flex-1" style={{ background: primary ?? "#ccc" }} />
+          <div className="flex-1" style={{ background: secondary ?? "#eee" }} />
+          <div className="flex-1 bg-white border-l border-black/5" />
+        </div>
+      )}
+      <div className="px-3 py-2">
         <span className={`text-sm font-bold ${active ? "text-[#DC2626]" : "text-gray-700"}`}>{name}</span>
+        <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
       </div>
-      <span className="text-xs text-gray-400 mt-0.5">{desc}</span>
     </button>
   );
 }
@@ -1297,21 +1407,37 @@ function MultiUploadGrid({ slots, onFileSelected, onRemove }: {
   onRemove: (index: number) => void;
 }) {
   const [activeIdx, setActiveIdx] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function openPicker(i: number) {
     setActiveIdx(i);
+    setPickerOpen(true);
     if (fileRef.current) {
       fileRef.current.value = "";
       fileRef.current.click();
     }
   }
 
+  function handleDrop(e: React.DragEvent, i: number) {
+    e.preventDefault();
+    setDragOverIdx(null);
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type.startsWith("image/")) onFileSelected(f, i);
+  }
+
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-5 gap-2">
         {slots.map((slot, i) => (
-          <div key={i} className="relative aspect-square">
+          <div
+            key={i}
+            className="relative aspect-square"
+            onDragOver={(e) => { e.preventDefault(); setDragOverIdx(i); }}
+            onDragLeave={() => setDragOverIdx(null)}
+            onDrop={(e) => handleDrop(e, i)}
+          >
             {slot ? (
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1328,25 +1454,35 @@ function MultiUploadGrid({ slots, onFileSelected, onRemove }: {
             ) : (
               <button
                 onClick={() => openPicker(i)}
-                className="w-full h-full border-2 border-dashed border-gray-200 hover:border-[#DC2626]/50 hover:bg-red-50/30 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors"
+                className={`w-full h-full border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-1 transition-colors ${
+                  dragOverIdx === i
+                    ? "border-[#DC2626] bg-red-50/60"
+                    : pickerOpen && activeIdx === i
+                    ? "border-[#DC2626]/70 bg-red-50/40"
+                    : "border-gray-200 hover:border-[#DC2626]/50 hover:bg-red-50/30"
+                }`}
               >
-                <span className="text-gray-300 text-xl leading-none">+</span>
+                <span className={`text-xl leading-none ${dragOverIdx === i ? "text-[#DC2626]" : "text-gray-300"}`}>
+                  {dragOverIdx === i ? "↓" : "+"}
+                </span>
                 <span className="text-gray-400 text-[10px]">카드 {i + 1}</span>
               </button>
             )}
           </div>
         ))}
       </div>
-      <p className="text-xs text-gray-400">{slots.filter(Boolean).length}/5장 업로드됨 · JPG, PNG, WebP 지원</p>
+      <p className="text-xs text-gray-400">{slots.filter(Boolean).length}/5장 업로드됨 · JPG, PNG, WebP · 드래그도 가능</p>
       <input
         ref={fileRef}
         type="file"
         accept="image/*"
         className="hidden"
         onChange={(e) => {
+          setPickerOpen(false);
           const f = e.target.files?.[0];
           if (f) onFileSelected(f, activeIdx);
         }}
+        onBlur={() => setPickerOpen(false)}
       />
     </div>
   );
