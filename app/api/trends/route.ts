@@ -2,21 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
-// Google News 대만 RSS 엔드포인트
+// Google News 대만 RSS 엔드포인트 — 병렬로 전부 시도해서 타이틀 합산
 const NEWS_FEEDS = [
   "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
   "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZqTkhjU0FtdHZHZ0pWVXlnQVAB?hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+  "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFpsY0hNU0FtdHZHZ0pWVXlnQVAB?hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
 ];
+
+const FETCH_TIMEOUT_MS = 6000;
 
 export async function GET(req: NextRequest) {
   const apiKey = getApiKey(req);
   if (!apiKey) return missingKeyResponse();
 
   try {
-    const rawTitles = await fetchNewsTitles();
+    // 모든 피드를 병렬로 가져오고, 실패한 것은 조용히 무시
+    const rawTitles = await fetchNewsTitlesParallel();
 
     if (rawTitles.length === 0) {
-      throw new Error("뉴스 데이터를 가져오지 못했습니다.");
+      throw new Error("대만 뉴스를 가져오지 못했습니다. 잠시 후 다시 시도해주세요.");
     }
 
     const client = new Anthropic({ apiKey });
@@ -62,51 +66,83 @@ JSON 배열만 출력하세요 (설명 없이):
   }
 }
 
-async function fetchNewsTitles(): Promise<string[]> {
-  const titles: string[] = [];
+/** 모든 피드를 병렬로 요청, 타임아웃 6초, 실패 피드는 빈 배열로 처리 */
+async function fetchNewsTitlesParallel(): Promise<string[]> {
+  const results = await Promise.allSettled(
+    NEWS_FEEDS.map((url) => fetchSingleFeed(url))
+  );
+
   const seen = new Set<string>();
+  const titles: string[] = [];
 
-  for (const url of NEWS_FEEDS) {
-    if (titles.length >= 20) break;
-    try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-          Accept: "application/rss+xml, application/xml, text/xml, */*",
-        },
-        next: { revalidate: 1800 },
-      });
-
-      if (!res.ok) continue;
-
-      const xml = await res.text();
-
-      const cdataRe = /<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/g;
-      const plainRe = /<title>([\s\S]*?)<\/title>/g;
-      let m: RegExpExecArray | null;
-      let isFirst = true;
-
-      while ((m = cdataRe.exec(xml)) !== null) {
-        const t = m[1].trim();
-        if (t && !seen.has(t)) { seen.add(t); titles.push(t); }
-        if (titles.length >= 20) break;
-      }
-
-      if (titles.length === 0) {
-        while ((m = plainRe.exec(xml)) !== null) {
-          if (isFirst) { isFirst = false; continue; }
-          const t = decodeXmlEntities(m[1].trim());
-          if (t && !seen.has(t)) { seen.add(t); titles.push(t); }
-          if (titles.length >= 20) break;
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      for (const t of result.value) {
+        if (!seen.has(t) && titles.length < 20) {
+          seen.add(t);
+          titles.push(t);
         }
       }
-    } catch {
-      continue;
     }
   }
 
-  return titles.slice(0, 20);
+  return titles;
+}
+
+/** 단일 RSS 피드를 타임아웃 포함해서 가져옴 */
+async function fetchSingleFeed(url: string): Promise<string[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        Accept: "application/rss+xml, application/xml, text/xml, */*",
+        "Accept-Language": "zh-TW,zh;q=0.9",
+        "Cache-Control": "no-cache",
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) return [];
+
+    const xml = await res.text();
+    return parseTitlesFromXml(xml);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function parseTitlesFromXml(xml: string): string[] {
+  const titles: string[] = [];
+
+  // CDATA 형식 우선
+  const cdataRe = /<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/g;
+  let m: RegExpExecArray | null;
+  while ((m = cdataRe.exec(xml)) !== null) {
+    const t = m[1].trim();
+    if (t) titles.push(t);
+    if (titles.length >= 20) return titles;
+  }
+
+  // 일반 텍스트 형식 (첫 번째 <title>은 피드 제목이므로 건너뜀)
+  if (titles.length === 0) {
+    const plainRe = /<title>([\s\S]*?)<\/title>/g;
+    let isFirst = true;
+    while ((m = plainRe.exec(xml)) !== null) {
+      if (isFirst) { isFirst = false; continue; }
+      const t = decodeXmlEntities(m[1].trim());
+      if (t) titles.push(t);
+      if (titles.length >= 20) return titles;
+    }
+  }
+
+  return titles;
 }
 
 function decodeXmlEntities(str: string): string {
