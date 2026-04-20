@@ -15,6 +15,7 @@ import {
   type CardStyleConfig,
 } from "@/components/DynamicCards";
 import { FlexCard, type StoryboardTemplate } from "@/components/FlexCard";
+import type { ScheduleEntry } from "@/lib/scheduler";
 import { PPCard1, PPCard2, PPCard3, PPCard4, PPCard5 } from "@/components/PowerPageCards";
 
 const DEFAULT_TOPICS = [
@@ -121,6 +122,18 @@ export default function HomePage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
 
+  // 자동화 패널
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [instantPosting, setInstantPosting] = useState(false);
+  const [instantResult, setInstantResult] = useState<{
+    topic?: string; blogTitle?: string; postUrl?: string; log?: string[]; error?: string;
+  } | null>(null);
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
+  const [schedTime, setSchedTime] = useState("09:00");
+  const [schedType, setSchedType] = useState<"daily" | "once">("daily");
+  const [schedDate, setSchedDate] = useState("");
+  const [schedLoading, setSchedLoading] = useState(false);
+
   const [trendsLoading, setTrendsLoading] = useState(false);
   const [trendsData, setTrendsData] = useState<TrendsResult | null>(null);
   const [trendsError, setTrendsError] = useState("");
@@ -150,7 +163,66 @@ export default function HomePage() {
     setApiKey(savedKey);
     setApiKeyInput(savedKey);
     if (!savedKey) setSettingsOpen(true);
+    loadSchedules();
   }, []);
+
+  async function loadSchedules() {
+    try {
+      const res = await fetch("/api/schedule");
+      const data = await res.json();
+      setSchedules(data);
+    } catch { /* ignore */ }
+  }
+
+  async function handleInstantPost() {
+    setInstantPosting(true);
+    setInstantResult(null);
+    try {
+      const res = await fetch("/api/auto-run", {
+        method: "POST",
+        headers: apiHeaders(),
+      });
+      const data = await res.json();
+      setInstantResult(data);
+    } catch (e) {
+      setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
+    } finally {
+      setInstantPosting(false);
+    }
+  }
+
+  async function handleAddSchedule() {
+    if (!schedTime) return;
+    setSchedLoading(true);
+    try {
+      await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ time: schedTime, type: schedType, date: schedDate || undefined }),
+      });
+      await loadSchedules();
+      setSchedDate("");
+    } catch { /* ignore */ }
+    setSchedLoading(false);
+  }
+
+  async function handleToggleSchedule(id: string) {
+    await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "toggle", id }),
+    });
+    await loadSchedules();
+  }
+
+  async function handleDeleteSchedule(id: string) {
+    await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", id }),
+    });
+    await loadSchedules();
+  }
 
   function handleSaveApiKey() {
     const trimmed = apiKeyInput.trim();
@@ -602,6 +674,15 @@ export default function HomePage() {
             <div className={`w-2 h-2 rounded-full ${apiKey ? "bg-green-500" : "bg-orange-400 animate-pulse"}`} />
             {apiKey ? "API 키 설정됨" : "API 키 미설정"}
           </div>
+          <button
+            onClick={() => { setAutoOpen(true); loadSchedules(); }}
+            className="flex items-center gap-1.5 text-xs bg-[#DC2626] hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition-colors font-semibold"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            자동 포스팅
+          </button>
           <button
             onClick={() => { setApiKeyInput(apiKey); setShowKey(false); setSettingsOpen(true); }}
             className="flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg transition-colors"
@@ -1276,6 +1357,187 @@ export default function HomePage() {
               {renderCard(i)}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ⚡ 자동 포스팅 모달 */}
+      {autoOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setAutoOpen(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
+              <div>
+                <h3 className="text-base font-bold text-[#1A1A1A]">⚡ 자동 포스팅</h3>
+                <p className="text-xs text-gray-400 mt-0.5">대만 뉴스 → 카드뉴스 → 네이버 블로그 자동화</p>
+              </div>
+              <button onClick={() => setAutoOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* ── 즉시 포스팅 ── */}
+              <section className="space-y-3">
+                <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
+                  <span className="w-5 h-5 bg-[#DC2626] text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                  지금 바로 포스팅
+                </h4>
+                <p className="text-xs text-gray-400">대만 뉴스 트렌드에서 주제를 골라 카드뉴스 + 블로그를 즉시 생성하고 네이버에 포스팅합니다.</p>
+
+                <button
+                  onClick={handleInstantPost}
+                  disabled={instantPosting}
+                  className="w-full bg-[#DC2626] text-white py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                >
+                  {instantPosting ? (
+                    <><Spinner /> 포스팅 진행 중... (1~2분 소요)</>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      지금 바로 포스팅
+                    </>
+                  )}
+                </button>
+
+                {instantPosting && (
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                    <p className="text-xs font-semibold text-gray-600">진행 중...</p>
+                    {["트렌드 수집", "주제 선택", "카드뉴스 생성", "블로그 원고 작성", "네이버 포스팅"].map((step, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs text-gray-500">
+                        <Spinner size={10} />
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {instantResult && (
+                  <div className={`rounded-xl p-4 space-y-2 ${instantResult.error ? "bg-red-50 border border-red-100" : "bg-green-50 border border-green-100"}`}>
+                    {instantResult.error ? (
+                      <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
+                    ) : (
+                      <>
+                        <p className="text-xs font-bold text-green-700">✅ 포스팅 완료!</p>
+                        <div className="space-y-1">
+                          <p className="text-xs text-gray-700"><span className="font-semibold">주제:</span> {instantResult.topic}</p>
+                          <p className="text-xs text-gray-700"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
+                          {instantResult.postUrl && (
+                            <a href={instantResult.postUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-blue-600 underline break-all">{instantResult.postUrl}</a>
+                          )}
+                        </div>
+                        {instantResult.log && instantResult.log.length > 0 && (
+                          <div className="mt-2 space-y-0.5">
+                            {instantResult.log.map((l, i) => (
+                              <p key={i} className="text-[10px] text-gray-500">{l}</p>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <div className="h-px bg-gray-100" />
+
+              {/* ── 예약 포스팅 ── */}
+              <section className="space-y-4">
+                <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
+                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                  예약 포스팅
+                </h4>
+
+                {/* 예약 추가 폼 */}
+                <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-600">새 예약 추가</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">시간 (KST)</label>
+                      <input
+                        type="time"
+                        value={schedTime}
+                        onChange={(e) => setSchedTime(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">반복</label>
+                      <select
+                        value={schedType}
+                        onChange={(e) => setSchedType(e.target.value as "daily" | "once")}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
+                      >
+                        <option value="daily">매일</option>
+                        <option value="once">한 번만</option>
+                      </select>
+                    </div>
+                  </div>
+                  {schedType === "once" && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">날짜</label>
+                      <input
+                        type="date"
+                        value={schedDate}
+                        onChange={(e) => setSchedDate(e.target.value)}
+                        min={new Date().toISOString().slice(0, 10)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
+                      />
+                    </div>
+                  )}
+                  <button
+                    onClick={handleAddSchedule}
+                    disabled={schedLoading || (schedType === "once" && !schedDate)}
+                    className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {schedLoading ? <><Spinner /> 저장 중...</> : "+ 예약 추가"}
+                  </button>
+                </div>
+
+                {/* 예약 목록 */}
+                {schedules.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-gray-500">등록된 예약 ({schedules.length}개)</p>
+                    {schedules.map((s) => (
+                      <div key={s.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 transition-colors ${s.enabled ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleToggleSchedule(s.id)}
+                            className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${s.enabled ? "bg-[#DC2626]" : "bg-gray-300"}`}
+                          >
+                            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${s.enabled ? "translate-x-4" : "translate-x-0.5"}`} />
+                          </button>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{s.time} KST</p>
+                            <p className="text-xs text-gray-400">
+                              {s.type === "daily" ? "매일" : `${s.date} 한 번`}
+                              {s.lastRanAt && ` · 마지막 실행: ${new Date(s.lastRanAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteSchedule(s.id)}
+                          className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-lg leading-none"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-gray-400">
+                    <p className="text-2xl mb-1">🕐</p>
+                    <p className="text-xs">등록된 예약이 없습니다</p>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                  서버(Railway)에서 매 분 스케줄을 확인합니다. 앱이 배포된 상태라면 브라우저 없이도 자동으로 실행됩니다.
+                </p>
+              </section>
+            </div>
+          </div>
         </div>
       )}
 
