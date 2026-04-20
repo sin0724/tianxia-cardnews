@@ -100,6 +100,12 @@ export default function HomePage() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
+  // 스토리보드 업로드
+  const [storyboardSlot, setStoryboardSlot] = useState<UploadSlot | null>(null);
+  const [analyzingStoryboard, setAnalyzingStoryboard] = useState(false);
+  const [storyboardError, setStoryboardError] = useState("");
+  const [storyboardSuccess, setStoryboardSuccess] = useState("");
+
   // Step 3 모달 레퍼런스 업로드
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadSlots3, setUploadSlots3] = useState<(UploadSlot | null)[]>(Array(5).fill(null));
@@ -310,6 +316,42 @@ export default function HomePage() {
       setAnalyzeError(e instanceof Error ? e.message : "스타일 분석 실패");
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  async function handleAnalyzeStoryboard() {
+    if (!storyboardSlot) return;
+    setAnalyzingStoryboard(true);
+    setStoryboardError("");
+    setStoryboardSuccess("");
+    try {
+      const res = await fetch("/api/analyze-storyboard", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ image: { base64: storyboardSlot.base64, mediaType: storyboardSlot.mediaType } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "분석 실패");
+      const newConfig = data as CardStyleConfig;
+      const existingIdx = customTemplates.findIndex((t) => t.name === newConfig.name);
+      let finalId: string;
+      let finalTemplates: CardStyleConfig[];
+      if (existingIdx >= 0) {
+        finalId = customTemplates[existingIdx].id;
+        finalTemplates = customTemplates.map((t, i) => i === existingIdx ? { ...newConfig, id: finalId } : t);
+      } else {
+        finalId = newConfig.id;
+        finalTemplates = [...customTemplates, newConfig];
+      }
+      saveCustomTemplates(finalTemplates);
+      setSelectedId(finalId);
+      setLastCreatedTemplate(newConfig);
+      setStoryboardSlot(null);
+      setStoryboardSuccess(newConfig.name);
+    } catch (e) {
+      setStoryboardError(e instanceof Error ? e.message : "스토리보드 분석 실패");
+    } finally {
+      setAnalyzingStoryboard(false);
     }
   }
 
@@ -824,6 +866,57 @@ export default function HomePage() {
                       </div>
                     )}
                   </div>
+                )}
+              </div>}
+
+              {/* 스토리보드 업로드 — 파워페이지 모드에서는 숨김 */}
+              {!powerPage && <div className="space-y-3 border-t border-gray-100 pt-6">
+                <div>
+                  <h3 className="text-sm font-bold text-[#1A1A1A]">
+                    📋 스토리보드로 템플릿 만들기
+                    <span className="text-gray-400 font-normal text-xs ml-1">(선택) — 한 장짜리 스토리보드</span>
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-1">여러 화면이 담긴 스토리보드 이미지 1장을 올리면 디자인 시스템을 분석해 템플릿을 만들어 드립니다</p>
+                </div>
+
+                <StoryboardUpload
+                  slot={storyboardSlot}
+                  onFileSelected={async (file) => {
+                    const slot = await readFileAsSlot(file);
+                    setStoryboardSlot(slot);
+                    setStoryboardError("");
+                    setStoryboardSuccess("");
+                  }}
+                  onRemove={() => { setStoryboardSlot(null); setStoryboardError(""); setStoryboardSuccess(""); }}
+                />
+
+                {storyboardError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{storyboardError}</p>}
+
+                {storyboardSuccess && (
+                  <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2.5 space-y-2">
+                    <p className="text-xs text-green-700 font-semibold">✅ &apos;{storyboardSuccess}&apos; 템플릿이 추가됐어요!</p>
+                    {lastCreatedTemplate && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex rounded overflow-hidden border border-green-200 h-6 flex-shrink-0">
+                          <div className="w-7" style={{ background: lastCreatedTemplate.coverBg }} />
+                          <div className="w-7" style={{ background: lastCreatedTemplate.darkCardBg }} />
+                          <div className="w-7" style={{ background: lastCreatedTemplate.lightCardBg }} />
+                          <div className="w-7" style={{ background: lastCreatedTemplate.primary }} />
+                        </div>
+                        <span className="text-xs text-green-600">커버 · 다크 · 라이트 · 포인트 색상</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {storyboardSlot && !storyboardSuccess && (
+                  <button
+                    onClick={handleAnalyzeStoryboard}
+                    disabled={analyzingStoryboard}
+                    className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-xl text-sm font-bold hover:bg-gray-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {analyzingStoryboard ? <><Spinner /> 스토리보드 분석 중...</> : "✨ 스토리보드로 템플릿 만들기"}
+                  </button>
                 )}
               </div>}
 
@@ -1397,6 +1490,63 @@ function Field({ label, value, onChange, multiline }: {
       {multiline
         ? <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className={cls} />
         : <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={cls} />}
+    </div>
+  );
+}
+
+function StoryboardUpload({ slot, onFileSelected, onRemove }: {
+  slot: UploadSlot | null;
+  onFileSelected: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type.startsWith("image/")) onFileSelected(f);
+  }
+
+  return (
+    <div className="space-y-2">
+      {slot ? (
+        <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={slot.preview} alt="스토리보드" className="w-full max-h-48 object-contain" />
+          <button
+            onClick={onRemove}
+            className="absolute top-2 right-2 w-6 h-6 bg-gray-800/70 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs transition-colors"
+          >×</button>
+          <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full">스토리보드 업로드됨</div>
+        </div>
+      ) : (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+          className={`w-full h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${
+            dragOver ? "border-[#DC2626] bg-red-50/60" : "border-gray-200 hover:border-[#DC2626]/50 hover:bg-red-50/30"
+          }`}
+        >
+          <span className={`text-3xl leading-none ${dragOver ? "text-[#DC2626]" : "text-gray-300"}`}>📋</span>
+          <span className="text-xs text-gray-400">스토리보드 이미지를 드래그하거나 클릭하세요</span>
+          <span className="text-[10px] text-gray-300">JPG, PNG, WebP · 1장</span>
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFileSelected(f);
+          e.target.value = "";
+        }}
+      />
     </div>
   );
 }
