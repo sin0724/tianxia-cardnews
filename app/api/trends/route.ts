@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
-// Google News 대만 RSS 엔드포인트 — 병렬로 전부 시도해서 타이틀 합산
+// 대만 뉴스 RSS — 서버 IP 차단이 없는 직접 소스를 우선, Google News는 보조
 const NEWS_FEEDS = [
+  // 자유時報 즉시뉴스 (서버 친화적)
+  "https://news.ltn.com.tw/rss/all.xml",
+  // ETtoday 실시간 뉴스
+  "https://feeds.feedburner.com/ettoday/realtime",
+  // Google News TW (데이터센터에서 차단될 수 있으나 가능하면 포함)
   "https://news.google.com/rss?hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-  "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZqTkhjU0FtdHZHZ0pWVXlnQVAB?hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-  "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFpsY0hNU0FtdHZHZ0pWVXlnQVAB?hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
 ];
 
-const FETCH_TIMEOUT_MS = 6000;
+const FETCH_TIMEOUT_MS = 10000;
 
 export async function GET(req: NextRequest) {
   const apiKey = getApiKey(req);
