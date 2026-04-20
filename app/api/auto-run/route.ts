@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 import { loadUsedTopics, saveUsedTopics, pickUnusedTopic } from "@/lib/topicHistory";
-import { refreshNaverToken, postToNaverBlog } from "@/lib/naverBlog";
+import { postToNaverBlogPlaywright } from "@/lib/naverBlogPlaywright";
 
 function baseUrl(req: NextRequest): string {
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
@@ -59,18 +59,17 @@ export async function POST(req: NextRequest) {
     // ── 5. 주제 히스토리 저장 (포스팅 전에 저장 — 실패해도 재생성 방지) ──
     saveUsedTopics([...usedTopics, topic]);
 
-    // ── 6. 네이버 블로그 포스팅 ──
-    const clientId = process.env.NAVER_CLIENT_ID;
-    const clientSecret = process.env.NAVER_CLIENT_SECRET;
-    const refreshToken = process.env.NAVER_REFRESH_TOKEN;
+    // ── 6. 네이버 블로그 포스팅 (Playwright 브라우저 자동화) ──
+    const naverId = process.env.NAVER_ID;
+    const naverPw = process.env.NAVER_PW;
 
     let postUrl = "";
-    if (clientId && clientSecret && refreshToken) {
-      log.push("네이버 블로그 포스팅 중...");
+    if (naverId && naverPw) {
+      log.push("네이버 블로그 포스팅 중 (브라우저 자동화)...");
       try {
-        const accessToken = await refreshNaverToken(clientId, clientSecret, refreshToken);
-        postUrl = await postToNaverBlog(
-          accessToken,
+        postUrl = await postToNaverBlogPlaywright(
+          naverId,
+          naverPw,
           blogData.title ?? topic,
           blogData.content ?? "",
           blogData.tags ?? []
@@ -80,7 +79,7 @@ export async function POST(req: NextRequest) {
         log.push(`⚠️ 네이버 포스팅 실패 (원고는 생성됨): ${naverErr instanceof Error ? naverErr.message : String(naverErr)}`);
       }
     } else {
-      log.push("⚠️ 네이버 환경변수 미설정 — 포스팅 건너뜀");
+      log.push("⚠️ NAVER_ID / NAVER_PW 환경변수 미설정 — 포스팅 건너뜀");
     }
 
     return NextResponse.json({
