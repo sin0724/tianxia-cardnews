@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import type { CardStyleConfig } from "@/components/DynamicCards";
+import type { StoryboardTemplate } from "@/components/FlexCard";
 import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 
 export async function POST(req: NextRequest) {
@@ -20,49 +20,86 @@ export async function POST(req: NextRequest) {
 
     const response = await client.messages.create({
       model: "claude-opus-4-6",
-      max_tokens: 1200,
+      max_tokens: 8000,
       messages: [
         {
           role: "user",
           content: [
             {
               type: "image",
-              source: {
-                type: "base64",
-                media_type: image.mediaType,
-                data: image.base64,
-              },
+              source: { type: "base64", media_type: image.mediaType, data: image.base64 },
             },
             {
               type: "text",
-              text: `이 이미지는 앱/서비스의 디자인 스토리보드입니다. 여러 화면(스크린)이 한 장에 배치되어 있으며, 색상 팔레트나 타이포그래피 가이드가 포함되어 있을 수 있습니다.
+              text: `이 이미지는 앱/서비스 디자인 스토리보드입니다. 여러 화면이 한 장에 배치되어 있으며 색상 팔레트, 타이포그래피 가이드가 포함될 수 있습니다.
 
-전체 디자인 시스템을 종합 분석해서 카드뉴스 템플릿 스타일을 추출해주세요.
+이 스토리보드의 시각적 디자인 언어를 완전히 분석하고, 카드뉴스 5장의 레이아웃을 스토리보드 스타일과 최대한 유사하게 설계해주세요.
 
-분석 기준:
-- 스토리보드 전반에서 가장 많이 사용된 주요 포인트 색상
-- 배경/화면 색상 계열 (밝은/어두운/컬러풀)
-- 텍스트 색상 및 대비
-- 전체적인 디자인 스타일 (모던, 클린, 볼드, 미니멀 등)
-- 버튼·뱃지·카드 모서리 스타일
-- 색상 팔레트 섹션이 있다면 해당 색상 우선 참고
+━━ 카드 규격 ━━
+크기: 1080 × 1350 px (세로형)
+구성: 커버 / 훅 / 인사이트 / 리스트 / CTA
 
-JSON만 출력하세요 (설명 없이):
+━━ 레이아웃 구조 ━━
+각 카드는 세로 flexbox 컬럼입니다. elements 배열이 위에서 아래로 쌓입니다.
+
+━━ 요소 타입 ━━
+"spacer"  - 남은 공간을 채움. flex 값으로 비율 조정 (예: flex:1)
+"text"    - 일반 텍스트 블록
+"divider" - 수평 구분선 또는 장식 바. height/color/width 지정
+"button"  - CTA 버튼. background/color/borderRadius/paddingX/paddingY
+"box"     - 배경색 있는 텍스트 박스 (TIP, 강조 영역 등). background/borderRadius/paddingX/paddingY + 텍스트 속성
+
+━━ 공통 속성 ━━
+fontSize: px 단위 숫자 (1080px 기준 — 대형제목 80~120, 소제목 40~60, 본문 28~36, 뱃지 22~28)
+fontWeight: "300"|"400"|"500"|"600"|"700"|"800"|"900"
+color: hex 또는 rgba()
+textAlign: "left"|"center"|"right"
+lineHeight: 배수 (예: 1.3)
+letterSpacing: em 단위 문자열 (예: "-0.02em")
+background: hex, rgba(), 또는 "linear-gradient(...)"
+borderRadius: px 숫자
+paddingX: 좌우 여백 px
+paddingY: 상하 여백 px
+marginTop: px 숫자
+marginBottom: px 숫자
+width: "100%"|"auto"|"60%" 등
+alignSelf: "flex-start"|"flex-end"|"center"|"stretch"
+opacity: 0~1
+border: CSS border 문자열 (예: "2px solid rgba(255,255,255,0.3)")
+flex: spacer에서 사용, 빈 공간 비율
+height: divider 높이 px
+
+━━ content 변수 ━━
+카드1(커버):     {{badge}}, {{title_line1}}, {{title_line2}}, {{subtitle}}
+카드2(훅):       {{label}}, {{title}}, {{highlight}}, {{body}}
+카드3(인사이트): {{category}}, {{title}}, {{body}}, {{highlight}}, {{tip}}
+카드4(리스트):   {{category}}, {{title}}, {{items.0.tag}}, {{items.0.title}}, {{items.0.desc}}, {{items.1.tag}}, {{items.1.title}}, {{items.1.desc}}, {{items.2.tag}}, {{items.2.title}}, {{items.2.desc}}
+카드5(CTA):      {{main}}, {{subtitle}}, {{cta}}
+
+━━ 중요 지침 ━━
+- 스토리보드의 색상을 정확히 추출해 사용하세요
+- 스토리보드의 텍스트 배치 스타일(상단집중/하단집중/중앙정렬 등)을 반영하세요
+- 스토리보드의 버튼·뱃지·카드 형태를 반영하세요
+- 여백(paddingX, paddingY)은 스토리보드 느낌에 맞게 설정하세요
+- spacer를 적극 활용해 텍스트가 한쪽에 몰리지 않게 자연스러운 레이아웃을 만드세요
+- 각 카드가 서로 다른 배경·레이아웃을 가지도록 다양하게 설계하세요
+
+━━ 출력 형식 ━━
+JSON만 출력하세요 (설명, 주석, 마크다운 없이):
 {
-  "name": "스타일 이름 (예: 블루 클린, 퍼플 모던) — 스토리보드의 색상/분위기 기반",
-  "primary": "#색상코드 - 주요 포인트/강조 색상",
-  "coverBg": "#색상코드 - 커버 카드 배경색 (가장 임팩트 있는 배경)",
-  "darkCardBg": "#색상코드 - 어두운 배경 카드용 색상",
-  "lightCardBg": "#색상코드 - 밝은 배경 카드용 색상 (흰색 또는 연한 색)",
-  "accentBg": "#색상코드 - TIP박스/강조 영역 배경 (primary와 동일하거나 유사)",
-  "textOnPrimary": "#색상코드 - 포인트 배경 위 텍스트 (보통 흰색)",
-  "textOnDark": "#색상코드 - 어두운 배경 위 텍스트 (보통 흰색 계열)",
-  "textOnLight": "#색상코드 - 밝은 배경 위 텍스트 (보통 어두운 색)",
-  "mutedOnDark": "rgba(255,255,255,0.6) 형식 - 어두운 배경 위 흐린 텍스트",
-  "mutedOnLight": "#색상코드 - 밝은 배경 위 흐린 텍스트 (회색 계열)",
-  "cornerRadius": 숫자 - 박스/뱃지 모서리(px): 0=직각, 8=약간, 16=중간, 32=둥글게, 40=매우둥글게,
-  "badgeStyle": "filled" 또는 "outlined" 또는 "pill",
-  "accentType": "bar" 또는 "line" 또는 "box" 또는 "none"
+  "name": "스타일 이름",
+  "cards": [
+    {
+      "background": "...",
+      "paddingX": 80,
+      "paddingY": 100,
+      "elements": [...]
+    },
+    { ... },
+    { ... },
+    { ... },
+    { ... }
+  ]
 }`,
             },
           ],
@@ -72,16 +109,20 @@ JSON만 출력하세요 (설명 없이):
 
     const text = response.content[0].type === "text" ? response.content[0].text : "";
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("스타일 분석 결과를 파싱할 수 없습니다.");
+    if (!jsonMatch) throw new Error("레이아웃 분석 결과를 파싱할 수 없습니다.");
 
-    const parsed = JSON.parse(jsonMatch[0]) as Omit<CardStyleConfig, "id">;
+    const parsed = JSON.parse(jsonMatch[0]) as Omit<StoryboardTemplate, "id">;
 
-    const config: CardStyleConfig = {
+    if (!parsed.cards || parsed.cards.length !== 5) {
+      throw new Error("카드 5장 레이아웃을 생성하지 못했습니다.");
+    }
+
+    const template: StoryboardTemplate = {
       ...parsed,
-      id: `custom_${Date.now()}`,
+      id: `storyboard_${Date.now()}`,
     };
 
-    return NextResponse.json(config);
+    return NextResponse.json(template);
   } catch (e) {
     return NextResponse.json({ error: friendlyError(e) }, { status: 500 });
   }

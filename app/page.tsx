@@ -14,6 +14,7 @@ import {
   DynCard1, DynCard2, DynCard3, DynCard4, DynCard5,
   type CardStyleConfig,
 } from "@/components/DynamicCards";
+import { FlexCard, type StoryboardTemplate } from "@/components/FlexCard";
 import { PPCard1, PPCard2, PPCard3, PPCard4, PPCard5 } from "@/components/PowerPageCards";
 
 const DEFAULT_TOPICS = [
@@ -42,6 +43,7 @@ const BUILTIN_TEMPLATES = [
 ] as const;
 
 const STORAGE_KEY = "tianxia_custom_templates";
+const STORYBOARD_STORAGE_KEY = "tianxia_storyboard_templates";
 const API_KEY_STORAGE = "tianxia_api_key";
 const POWER_PAGE_STORAGE_KEY = "tianxia_power_pages";
 
@@ -88,6 +90,7 @@ export default function HomePage() {
 
   const [selectedId, setSelectedId] = useState<string>("A");
   const [customTemplates, setCustomTemplates] = useState<CardStyleConfig[]>([]);
+  const [storyboardTemplates, setStoryboardTemplates] = useState<StoryboardTemplate[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [editTab, setEditTab] = useState<EditTab>("카드 1");
 
@@ -134,6 +137,10 @@ export default function HomePage() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) setCustomTemplates(JSON.parse(saved));
+    } catch { /* ignore */ }
+    try {
+      const savedSB = localStorage.getItem(STORYBOARD_STORAGE_KEY);
+      if (savedSB) setStoryboardTemplates(JSON.parse(savedSB));
     } catch { /* ignore */ }
     try {
       const savedPP = localStorage.getItem(POWER_PAGE_STORAGE_KEY);
@@ -184,6 +191,17 @@ export default function HomePage() {
   function saveCustomTemplates(templates: CardStyleConfig[]) {
     setCustomTemplates(templates);
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(templates)); } catch { /* ignore */ }
+  }
+
+  function saveStoryboardTemplates(templates: StoryboardTemplate[]) {
+    setStoryboardTemplates(templates);
+    try { localStorage.setItem(STORYBOARD_STORAGE_KEY, JSON.stringify(templates)); } catch { /* ignore */ }
+  }
+
+  function handleDeleteStoryboard(id: string) {
+    const updated = storyboardTemplates.filter((t) => t.id !== id);
+    saveStoryboardTemplates(updated);
+    if (selectedId === id) setSelectedId("A");
   }
 
   async function handleFetchTrends() {
@@ -332,22 +350,12 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "분석 실패");
-      const newConfig = data as CardStyleConfig;
-      const existingIdx = customTemplates.findIndex((t) => t.name === newConfig.name);
-      let finalId: string;
-      let finalTemplates: CardStyleConfig[];
-      if (existingIdx >= 0) {
-        finalId = customTemplates[existingIdx].id;
-        finalTemplates = customTemplates.map((t, i) => i === existingIdx ? { ...newConfig, id: finalId } : t);
-      } else {
-        finalId = newConfig.id;
-        finalTemplates = [...customTemplates, newConfig];
-      }
-      saveCustomTemplates(finalTemplates);
-      setSelectedId(finalId);
-      setLastCreatedTemplate(newConfig);
+      const tpl = data as StoryboardTemplate;
+      const updated = [...storyboardTemplates, tpl];
+      saveStoryboardTemplates(updated);
+      setSelectedId(tpl.id);
       setStoryboardSlot(null);
-      setStoryboardSuccess(newConfig.name);
+      setStoryboardSuccess(tpl.name);
     } catch (e) {
       setStoryboardError(e instanceof Error ? e.message : "스토리보드 분석 실패");
     } finally {
@@ -522,6 +530,11 @@ export default function HomePage() {
         case 3: return <PPCard4 data={content.card4} {...pp} />;
         case 4: return <PPCard5 data={content.card5} {...pp} />;
       }
+    }
+
+    const storyboardTpl = storyboardTemplates.find((t) => t.id === selectedId);
+    if (storyboardTpl) {
+      return <FlexCard layout={storyboardTpl.cards[i]} data={content} cardIndex={i} page={page} cat={cat} />;
     }
 
     const customStyle = customTemplates.find((t) => t.id === selectedId);
@@ -806,6 +819,23 @@ export default function HomePage() {
                       onClick={() => setSelectedId(t.id)}
                     />
                   ))}
+                  {storyboardTemplates.map((t) => (
+                    <div key={t.id} className="relative">
+                      <TemplateCard
+                        name={t.name}
+                        desc="스토리보드 분석"
+                        primary={t.cards[0].background}
+                        secondary={t.cards[2].background}
+                        active={selectedId === t.id}
+                        onClick={() => setSelectedId(t.id)}
+                        badge="📋"
+                      />
+                      <button
+                        onClick={() => handleDeleteStoryboard(t.id)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs transition-colors opacity-70 hover:opacity-100"
+                      >×</button>
+                    </div>
+                  ))}
                   {customTemplates.map((t) => (
                     <div key={t.id} className="relative">
                       {editingTemplateId === t.id ? (
@@ -893,19 +923,8 @@ export default function HomePage() {
                 {storyboardError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{storyboardError}</p>}
 
                 {storyboardSuccess && (
-                  <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2.5 space-y-2">
-                    <p className="text-xs text-green-700 font-semibold">✅ &apos;{storyboardSuccess}&apos; 템플릿이 추가됐어요!</p>
-                    {lastCreatedTemplate && (
-                      <div className="flex items-center gap-2">
-                        <div className="flex rounded overflow-hidden border border-green-200 h-6 flex-shrink-0">
-                          <div className="w-7" style={{ background: lastCreatedTemplate.coverBg }} />
-                          <div className="w-7" style={{ background: lastCreatedTemplate.darkCardBg }} />
-                          <div className="w-7" style={{ background: lastCreatedTemplate.lightCardBg }} />
-                          <div className="w-7" style={{ background: lastCreatedTemplate.primary }} />
-                        </div>
-                        <span className="text-xs text-green-600">커버 · 다크 · 라이트 · 포인트 색상</span>
-                      </div>
-                    )}
+                  <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2.5">
+                    <p className="text-xs text-green-700 font-semibold">✅ &apos;{storyboardSuccess}&apos; 템플릿이 추가됐어요! 카드뉴스를 생성하면 스토리보드 레이아웃이 적용됩니다.</p>
                   </div>
                 )}
 
@@ -1022,6 +1041,15 @@ export default function HomePage() {
               <div className="flex flex-wrap gap-2 flex-1">
                 {BUILTIN_TEMPLATES.map((t) => (
                   <TemplateBtn key={t.id} name={t.name} desc={t.desc} active={selectedId === t.id} onClick={() => setSelectedId(t.id)} primary={t.primary} secondary={t.secondary} />
+                ))}
+                {storyboardTemplates.map((t) => (
+                  <div key={t.id} className="relative">
+                    <TemplateBtn name={t.name} desc="스토리보드 분석" active={selectedId === t.id} onClick={() => setSelectedId(t.id)} primary={t.cards[0].background} secondary={t.cards[2].background} badge="📋" />
+                    <button
+                      onClick={() => handleDeleteStoryboard(t.id)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-xs transition-colors opacity-60 hover:opacity-100"
+                    >×</button>
+                  </div>
                 ))}
                 {customTemplates.map((t) => (
                   <div key={t.id} className="relative">
@@ -1390,8 +1418,8 @@ function StepsBar({ step }: { step: number }) {
   );
 }
 
-function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditName }: {
-  name: string; desc: string; primary: string; secondary: string; active: boolean; onClick: () => void; onEditName?: (e: React.MouseEvent) => void;
+function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditName, badge }: {
+  name: string; desc: string; primary: string; secondary: string; active: boolean; onClick: () => void; onEditName?: (e: React.MouseEvent) => void; badge?: string;
 }) {
   return (
     <button onClick={onClick}
@@ -1405,6 +1433,7 @@ function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditN
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
+              {badge && <span className="text-xs">{badge}</span>}
               <p className={`text-sm font-bold truncate ${active ? "text-[#DC2626]" : "text-gray-700"}`}>{name}</p>
               {onEditName && (
                 <button
@@ -1442,8 +1471,8 @@ function Spinner({ size = 16 }: { size?: number }) {
   );
 }
 
-function TemplateBtn({ name, desc, active, onClick, primary, secondary }: {
-  name: string; desc: string; active: boolean; onClick: () => void; primary?: string; secondary?: string;
+function TemplateBtn({ name, desc, active, onClick, primary, secondary, badge }: {
+  name: string; desc: string; active: boolean; onClick: () => void; primary?: string; secondary?: string; badge?: string;
 }) {
   return (
     <button onClick={onClick}
@@ -1456,7 +1485,10 @@ function TemplateBtn({ name, desc, active, onClick, primary, secondary }: {
         </div>
       )}
       <div className="px-3 py-2">
-        <span className={`text-sm font-bold ${active ? "text-[#DC2626]" : "text-gray-700"}`}>{name}</span>
+        <div className="flex items-center gap-1">
+          {badge && <span className="text-xs">{badge}</span>}
+          <span className={`text-sm font-bold ${active ? "text-[#DC2626]" : "text-gray-700"}`}>{name}</span>
+        </div>
         <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
       </div>
     </button>
