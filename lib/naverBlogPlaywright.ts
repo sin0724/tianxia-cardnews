@@ -56,13 +56,20 @@ export async function postToNaverBlogPlaywright(
     }
 
     // ── 2. 글쓰기 페이지 ──
-    // GoBlogWrite 시도 → mainFrame 없으면 PostWriteForm(blogId 명시)으로 폴백
+    // blog.naver.com 도메인 세션 먼저 확립 후 글쓰기 URL 진입
+    await page.goto("https://blog.naver.com", {
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
+    });
+    await page.waitForTimeout(1500);
+    console.log(`[Naver] blog.naver.com URL: ${page.url()}`);
+
+    // GoBlogWrite 시도
     await page.goto("https://blog.naver.com/GoBlogWrite.naver", {
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
       timeout: 30000,
     });
-    await page.waitForTimeout(2000);
-
+    await page.waitForTimeout(3000);
     console.log(`[Naver] GoBlogWrite URL: ${page.url()}`);
 
     // mainFrame이 없으면 blogId 명시 URL로 재시도
@@ -70,21 +77,23 @@ export async function postToNaverBlogPlaywright(
     if (!mainFrameVisible) {
       console.log("[Naver] GoBlogWrite에 mainFrame 없음 → PostWriteForm으로 재시도");
       await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${naverId}`, {
-        waitUntil: "networkidle",
+        waitUntil: "domcontentloaded",
         timeout: 30000,
       });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000);
       console.log(`[Naver] PostWriteForm URL: ${page.url()}`);
-
-      // 페이지 타이틀과 body 첫 100자 로그
-      const title = await page.title().catch(() => "?");
       const bodySnippet = await page.evaluate(() =>
-        document.body?.innerText?.slice(0, 200) ?? ""
+        document.body?.innerText?.slice(0, 150) ?? ""
       ).catch(() => "");
-      console.log(`[Naver] 페이지 타이틀: ${title}`);
       console.log(`[Naver] 페이지 내용: ${bodySnippet}`);
-
       mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
+    }
+
+    if (!mainFrameVisible) {
+      throw new Error(
+        `블로그 글쓰기 페이지 접근 실패 (현재 URL: ${page.url()}). ` +
+        `blog.naver.com/${naverId} 블로그가 존재하는지 확인하세요.`
+      );
     }
 
     // ── 3. mainFrame iframe 진입 ──
