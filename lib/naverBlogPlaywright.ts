@@ -115,18 +115,35 @@ export async function postToNaverBlogPlaywright(
     await typeChars(page, title);
     await page.waitForTimeout(500);
 
-    // ── 6. 본문 클릭 후 이미지 → 텍스트 순서로 입력 ──
+    // ── 6. 본문 클릭 후 이미지↔텍스트 교차 배치 ──
     await mainFrame.locator(".se-section-text").first().click();
     await page.waitForTimeout(500);
 
     const validImages = (imagePaths ?? []).filter((p) => fs.existsSync(p));
-    for (const imgPath of validImages) {
-      await uploadImageToEditor(mainFrame, page, imgPath);
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(400);
+
+    if (validImages.length === 0) {
+      await typeContent(page, content);
+    } else {
+      // 단락 분리 후 이미지 수에 맞게 균등 분배
+      const paragraphs = content.split(/\n\n+/).filter((p) => p.trim().length > 0);
+      const sections = splitIntoSections(paragraphs, validImages.length);
+
+      for (let i = 0; i < validImages.length; i++) {
+        // 이미지 삽입
+        await uploadImageToEditor(mainFrame, page, validImages[i]);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(400);
+
+        // 해당 구간 텍스트 입력
+        if (sections[i].length > 0) {
+          await typeContent(page, sections[i].join("\n\n"));
+          await page.keyboard.press("Enter");
+          await page.keyboard.press("Enter");
+          await page.waitForTimeout(300);
+        }
+      }
     }
 
-    await typeContent(page, content);
     await page.waitForTimeout(1000);
 
     // ── 7. 태그 입력 ──
@@ -418,6 +435,17 @@ export async function downloadTopicImage(topic: string, pexelsApiKey: string): P
 // ─────────────────────────────────────────
 // 유틸
 // ─────────────────────────────────────────
+
+function splitIntoSections(paragraphs: string[], count: number): string[][] {
+  const sections: string[][] = Array.from({ length: count }, () => []);
+  if (paragraphs.length === 0) return sections;
+  const perSection = Math.ceil(paragraphs.length / count);
+  paragraphs.forEach((p, i) => {
+    const idx = Math.min(Math.floor(i / perSection), count - 1);
+    sections[idx].push(p);
+  });
+  return sections;
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fillNaverInput(page: any, selector: string, value: string): Promise<void> {
