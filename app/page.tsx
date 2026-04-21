@@ -1584,24 +1584,27 @@ export default function HomePage() {
               {/* ── 예약 포스팅 ── */}
               <section className="space-y-4">
                 <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
-                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                  예약 포스팅
+                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">{content ? "3" : "2"}</span>
+                  예약 자동 포스팅
+                  {schedules.length > 0 && (
+                    <span className="ml-auto text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                      {schedules.filter((s) => s.enabled).length}개 활성
+                    </span>
+                  )}
                 </h4>
 
                 {/* 예약 추가 폼 */}
-                <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                  <p className="text-xs font-semibold text-gray-600">새 예약 추가</p>
-
-                  {/* 반복 타입 */}
-                  <div className="flex gap-1.5">
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  {/* 반복 타입 탭 */}
+                  <div className="flex border-b border-gray-100">
                     {(["weekly", "daily", "once"] as const).map((t) => (
                       <button
                         key={t}
                         onClick={() => setSchedType(t)}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
                           schedType === t
                             ? "bg-[#DC2626] text-white"
-                            : "bg-white border border-gray-200 text-gray-500 hover:border-gray-400"
+                            : "bg-white text-gray-400 hover:text-gray-600 hover:bg-gray-50"
                         }`}
                       >
                         {t === "weekly" ? "요일 반복" : t === "daily" ? "매일" : "한 번만"}
@@ -1609,119 +1612,171 @@ export default function HomePage() {
                     ))}
                   </div>
 
-                  {/* 요일 선택 */}
-                  {schedType === "weekly" && (
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">요일 선택</label>
-                      <div className="flex gap-1">
-                        {["일", "월", "화", "수", "목", "금", "토"].map((d, i) => {
-                          const active = schedWeekdays.includes(i);
-                          return (
-                            <button
-                              key={i}
-                              onClick={() =>
-                                setSchedWeekdays((prev) =>
-                                  active ? prev.filter((v) => v !== i) : [...prev, i].sort()
-                                )
-                              }
-                              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                                active
-                                  ? "bg-[#DC2626] text-white"
-                                  : "bg-white border border-gray-200 text-gray-400 hover:border-gray-400"
-                              }`}
-                            >
-                              {d}
-                            </button>
-                          );
-                        })}
+                  <div className="p-4 space-y-3 bg-white">
+                    {/* 요일 선택 */}
+                    {schedType === "weekly" && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">발행 요일</p>
+                        <div className="grid grid-cols-7 gap-1">
+                          {["일", "월", "화", "수", "목", "금", "토"].map((d, i) => {
+                            const active = schedWeekdays.includes(i);
+                            return (
+                              <button
+                                key={i}
+                                onClick={() =>
+                                  setSchedWeekdays((prev) =>
+                                    active ? prev.filter((v) => v !== i) : [...prev, i].sort()
+                                  )
+                                }
+                                className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                                  active
+                                    ? "bg-[#DC2626] text-white shadow-sm"
+                                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                }`}
+                              >
+                                {d}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {schedWeekdays.length === 0 && (
+                          <p className="text-[10px] text-red-500">요일을 하나 이상 선택하세요</p>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* 날짜 선택 (한 번만) */}
-                  {schedType === "once" && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">날짜</label>
+                    {/* 날짜 선택 (한 번만) */}
+                    {schedType === "once" && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">날짜</p>
+                        <input
+                          type="date"
+                          value={schedDate}
+                          onChange={(e) => setSchedDate(e.target.value)}
+                          min={new Date().toISOString().slice(0, 10)}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626]"
+                        />
+                      </div>
+                    )}
+
+                    {/* 시간 */}
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">발행 시간 (KST)</p>
                       <input
-                        type="date"
-                        value={schedDate}
-                        onChange={(e) => setSchedDate(e.target.value)}
-                        min={new Date().toISOString().slice(0, 10)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
+                        type="time"
+                        value={schedTime}
+                        onChange={(e) => setSchedTime(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-base font-bold focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626]"
                       />
                     </div>
-                  )}
 
-                  {/* 시간 */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">시간 (KST)</label>
-                    <input
-                      type="time"
-                      value={schedTime}
-                      onChange={(e) => setSchedTime(e.target.value)}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
-                    />
+                    <button
+                      onClick={handleAddSchedule}
+                      disabled={
+                        schedLoading ||
+                        (schedType === "once" && !schedDate) ||
+                        (schedType === "weekly" && schedWeekdays.length === 0)
+                      }
+                      className="w-full bg-[#DC2626] text-white py-2.5 rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    >
+                      {schedLoading ? <><Spinner /> 저장 중...</> : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          예약 추가
+                        </>
+                      )}
+                    </button>
                   </div>
-
-                  <button
-                    onClick={handleAddSchedule}
-                    disabled={
-                      schedLoading ||
-                      (schedType === "once" && !schedDate) ||
-                      (schedType === "weekly" && schedWeekdays.length === 0)
-                    }
-                    className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                  >
-                    {schedLoading ? <><Spinner /> 저장 중...</> : "+ 예약 추가"}
-                  </button>
                 </div>
 
                 {/* 예약 목록 */}
-                {schedules.length > 0 ? (
+                {schedules.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-500">등록된 예약 ({schedules.length}개)</p>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">등록된 스케줄</p>
                     {schedules.map((s) => (
-                      <div key={s.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 transition-colors ${s.enabled ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
-                        <div className="flex items-center gap-3">
+                      <div
+                        key={s.id}
+                        className={`rounded-xl border transition-all ${
+                          s.enabled
+                            ? "border-[#DC2626]/30 bg-red-50/40"
+                            : "border-gray-200 bg-gray-50 opacity-60"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 px-4 py-3">
+                          {/* 토글 */}
                           <button
                             onClick={() => handleToggleSchedule(s.id)}
-                            className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${s.enabled ? "bg-[#DC2626]" : "bg-gray-300"}`}
+                            className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${
+                              s.enabled ? "bg-[#DC2626]" : "bg-gray-300"
+                            }`}
                           >
-                            <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${s.enabled ? "translate-x-4" : "translate-x-0.5"}`} />
+                            <span
+                              className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                                s.enabled ? "translate-x-5" : "translate-x-1"
+                              }`}
+                            />
                           </button>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{s.time} KST</p>
-                            <p className="text-xs text-gray-400">
+
+                          {/* 내용 */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-base font-bold text-gray-900">{s.time}</span>
+                              <span className="text-xs text-gray-400">KST</span>
+                              {s.enabled && (
+                                <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-1.5 py-0.5 rounded-full">ON</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">
                               {s.type === "weekly"
-                                ? `매주 ${(s.weekdays ?? []).map((d) => ["일","월","화","수","목","금","토"][d]).join("/")} `
+                                ? `매주 ${(s.weekdays ?? []).map((d) => ["일","월","화","수","목","금","토"][d]).join(" · ")}`
                                 : s.type === "daily"
-                                ? "매일 "
-                                : `${s.date} 한 번 `}
-                              {s.time} KST
-                              {s.lastRanAt && ` · 마지막: ${new Date(s.lastRanAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                                ? "매일"
+                                : `${s.date} 1회`}
+                              {s.lastRanAt && (
+                                <span className="text-gray-400">
+                                  {" · 마지막 "}
+                                  {new Date(s.lastRanAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
                             </p>
                           </div>
+
+                          {/* 삭제 */}
+                          <button
+                            onClick={() => handleDeleteSchedule(s.id)}
+                            className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleDeleteSchedule(s.id)}
-                          className="w-7 h-7 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-lg leading-none"
-                        >×</button>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-center py-6 text-gray-400">
+                )}
+
+                {schedules.length === 0 && (
+                  <div className="text-center py-5 text-gray-400 border border-dashed border-gray-200 rounded-xl">
                     <p className="text-2xl mb-1">🕐</p>
-                    <p className="text-xs">등록된 예약이 없습니다</p>
+                    <p className="text-xs">아직 등록된 스케줄이 없습니다</p>
+                    <p className="text-[10px] text-gray-300 mt-1">위에서 요일과 시간을 설정하세요</p>
                   </div>
                 )}
 
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 space-y-1.5">
-                  <p className="text-[11px] font-semibold text-amber-700">스케줄 추가/변경 후 로컬 PC에서 1회 실행 필요</p>
-                  <code className="block text-[10px] text-amber-800 bg-amber-100 rounded px-2 py-1 break-all">
+                {/* 동기화 안내 */}
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <svg className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-[11px] font-semibold text-amber-700">스케줄 추가/변경 후 로컬 PC에서 1회 실행 필요</p>
+                  </div>
+                  <code className="block text-[10px] text-amber-900 bg-amber-100 rounded-lg px-2.5 py-2 break-all leading-relaxed">
                     powershell -ExecutionPolicy Bypass -File &quot;C:\Users\ADMIN\Desktop\tianxia-cardnews\scripts\sync-schedules.ps1&quot;
                   </code>
-                  <p className="text-[10px] text-amber-600">실행하면 설정한 요일/시간에 맞게 Windows 작업 스케줄러에 등록됩니다.</p>
                 </div>
               </section>
             </div>
