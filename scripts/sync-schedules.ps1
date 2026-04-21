@@ -1,8 +1,9 @@
 param()
 
-$EnvPath    = "$PSScriptRoot\..\\.env.local"
-$RailwayUrl = "https://tianxia-cardnews-production.up.railway.app"
-$ApiKey     = ""
+$EnvPath       = "$PSScriptRoot\..\\.env.local"
+$RailwayUrl    = "https://tianxia-cardnews-production.up.railway.app"
+$ApiKey        = ""
+$LocalCache    = "$PSScriptRoot\..\tianxia-schedules.json"
 
 if (Test-Path $EnvPath) {
   Get-Content $EnvPath | ForEach-Object {
@@ -19,14 +20,50 @@ if (-not $ApiKey) {
 $ProjectDir = "$PSScriptRoot\.."
 $RunScript  = "$ProjectDir\scripts\run-schedule.ps1"
 
+# Fetch schedules from Railway
 Write-Host "Fetching schedules from Railway..." -ForegroundColor Cyan
+$schedules = $null
 try {
   $schedules = Invoke-RestMethod -Uri "$RailwayUrl/api/schedule" `
     -Headers @{ "x-user-api-key" = $ApiKey } -TimeoutSec 15
 } catch {
-  Write-Host "[ERROR] Cannot connect to Railway: $_" -ForegroundColor Red
+  Write-Host "[WARN] Cannot connect to Railway: $_" -ForegroundColor Yellow
+}
+
+# If Railway returned empty/null but we have a local cache, restore it
+if ((-not $schedules -or $schedules.Count -eq 0) -and (Test-Path $LocalCache)) {
+  Write-Host "Railway returned no schedules. Loading from local cache..." -ForegroundColor Yellow
+  $schedules = Get-Content $LocalCache -Raw | ConvertFrom-Json
+
+  # Push cached schedules back to Railway
+  if ($schedules -and $schedules.Count -gt 0) {
+    Write-Host "Restoring $($schedules.Count) schedule(s) to Railway..." -ForegroundColor Cyan
+    foreach ($s in $schedules) {
+      try {
+        $body = $s | ConvertTo-Json -Compress
+        Invoke-RestMethod -Uri "$RailwayUrl/api/schedule" -Method POST `
+          -Headers @{ "x-user-api-key" = $ApiKey; "Content-Type" = "application/json" } `
+          -Body $body -TimeoutSec 10 | Out-Null
+      } catch {
+        Write-Host "  [WARN] Could not restore schedule $($s.id): $_" -ForegroundColor Yellow
+      }
+    }
+    Write-Host "Restore complete. Fetching updated list..." -ForegroundColor Cyan
+    try {
+      $schedules = Invoke-RestMethod -Uri "$RailwayUrl/api/schedule" `
+        -Headers @{ "x-user-api-key" = $ApiKey } -TimeoutSec 15
+    } catch { }
+  }
+}
+
+if (-not $schedules) {
+  Write-Host "[ERROR] No schedules available. Add schedules in the UI first." -ForegroundColor Red
   exit 1
 }
+
+# Save to local cache
+$schedules | ConvertTo-Json -Depth 5 | Out-File -FilePath $LocalCache -Encoding utf8
+Write-Host "Local cache updated: $LocalCache" -ForegroundColor DarkGray
 
 $DayMap = @{ 0="Sunday"; 1="Monday"; 2="Tuesday"; 3="Wednesday"; 4="Thursday"; 5="Friday"; 6="Saturday" }
 
@@ -83,7 +120,7 @@ if ($registered -eq 0) {
   Write-Host "$registered schedule(s) registered. Runs silently in background." -ForegroundColor Cyan
 }
 
-# Verify registered tasks
+# Verify
 Write-Host ""
 Write-Host "--- Registered TianxiaPoster tasks ---" -ForegroundColor White
 $tasks = Get-ScheduledTask | Where-Object { $_.TaskName -like "TianxiaPoster_*" }

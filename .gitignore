@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local schedule cache
+tianxia-schedules.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
