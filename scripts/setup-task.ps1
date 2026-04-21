@@ -36,5 +36,5 @@ Write-Host "예약발행 스케줄 등록:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File `"$ProjectDir\scripts\sync-schedules.ps1`"" -ForegroundColor White
 Write-Host ""
 Write-Host "로그 확인:" -ForegroundColor Gray
-Write-Host "  서버: Get-Content `$env:TEMP\tianxia-server.log -Tail 20" -ForegroundColor Gray
-Write-Host "  예약: Get-Content `$env:TEMP\tianxia-schedule.log -Tail 20" -ForegroundColor Gray
+Write-Host '  서버: Get-Content $env:TEMP\tianxia-server.log -Tail 20' -ForegroundColor Gray
+Write-Host '  예약: Get-Content $env:TEMP\tianxia-schedule.log -Tail 20' -ForegroundColor Gray
