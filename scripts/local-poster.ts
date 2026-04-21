@@ -1,16 +1,18 @@
 /**
- * 로컬 포스터 — 1분마다 백그라운드 실행 (Windows 작업 스케줄러)
+ * 로컬 포스터 — Windows 작업 스케줄러에서 설정된 시간에 호출됨
  *
  * 역할:
  *  1. Railway 대기 포스트 처리 (UI에서 "자동 포스팅" 클릭 시)
- *  2. Railway 스케줄 확인 → 실행 시각이면 콘텐츠 생성 + 자동 포스팅
+ *  2. 대기 포스트가 없으면 콘텐츠 자동 생성 + 네이버 포스팅
+ *
+ * 스케줄 설정:
+ *   scripts/sync-schedules.ps1 실행 → Windows 작업 스케줄러에 요일/시간 등록
  *
  * 수동 실행:
  *   npx tsx scripts/local-poster.ts
  */
 import { postToNaverBlogPlaywright } from "../lib/naverBlogPlaywright";
 import type { PendingPost } from "../app/api/pending-post/route";
-import type { ScheduleEntry } from "../lib/scheduler";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -31,26 +33,23 @@ const NAVER_ID      = process.env.NAVER_ID ?? "";
 const NAVER_PW      = process.env.NAVER_PW ?? "";
 const NAVER_BLOG_ID = process.env.NAVER_BLOG_ID ?? NAVER_ID;
 const API_KEY       = process.env.ANTHROPIC_API_KEY ?? "";
-
-const API_HEADERS = { "x-user-api-key": API_KEY };
+const API_HEADERS   = { "x-user-api-key": API_KEY };
 
 async function safeFetch(url: string, init?: RequestInit): Promise<Response | null> {
   try {
     return await fetch(url, { signal: AbortSignal.timeout(20000), ...init });
   } catch (e: unknown) {
-    console.error(`[포스터] 연결 실패 (${url}):`, e instanceof Error ? e.message : e);
+    console.error(`[포스터] 연결 실패:`, e instanceof Error ? e.message : e);
     return null;
   }
 }
 
-// ── 1. 대기 포스트 처리 ────────────────────────────────────────────────────
-
+/** Railway 대기 포스트 처리 */
 async function processPendingPost(): Promise<boolean> {
   const res = await safeFetch(`${RAILWAY_URL}/api/pending-post`, { headers: API_HEADERS });
   if (!res || !res.ok) return false;
 
   const post = (await res.json()) as PendingPost | null;
-
   if (!post || typeof post !== "object") return false;
 
   if (!post.title || !post.content) {
@@ -91,81 +90,59 @@ async function processPendingPost(): Promise<boolean> {
   }
 }
 
-// ── 2. 스케줄 확인 + 자동 실행 ────────────────────────────────────────────
+/** 대기 포스트가 없을 때 자동으로 콘텐츠 생성 후 포스팅 */
+async function runAutoPost(): Promise<void> {
+  console.log("[포스터] 대기 포스트 없음 — 자동 콘텐츠 생성 시작");
 
-async function processSchedules(): Promise<void> {
-  const res = await safeFetch(`${RAILWAY_URL}/api/schedule?due=1`, { headers: API_HEADERS });
-  if (!res || !res.ok) return;
-
-  const due = (await res.json()) as ScheduleEntry[];
-  if (!Array.isArray(due) || due.length === 0) return;
-
-  for (const schedule of due) {
-    console.log(`[스케줄] 실행: "${schedule.label}"`);
-
-    try {
-      // 콘텐츠 생성 (Railway)
-      const autoRes = await safeFetch(`${RAILWAY_URL}/api/auto-run`, {
-        method: "POST",
-        headers: { ...API_HEADERS, "Content-Type": "application/json" },
-      });
-      if (!autoRes || !autoRes.ok) {
-        console.error("[스케줄] 콘텐츠 생성 실패");
-        continue;
-      }
-
-      const autoData = (await autoRes.json()) as {
-        success: boolean;
-        topic?: string;
-        blogTitle?: string;
-        blogContent?: string;
-        tags?: string[];
-        error?: string;
-      };
-
-      if (!autoData.success || !autoData.blogTitle || !autoData.blogContent) {
-        console.error("[스케줄] 콘텐츠 데이터 오류:", autoData.error);
-        continue;
-      }
-
-      console.log(`[스케줄] 콘텐츠 생성 완료: "${autoData.blogTitle}"`);
-
-      // 네이버 포스팅 (이미지 없이 텍스트만)
-      const url = await postToNaverBlogPlaywright(
-        NAVER_ID, NAVER_PW, NAVER_BLOG_ID,
-        autoData.blogTitle,
-        autoData.blogContent,
-        autoData.tags ?? [],
-        []
-      );
-      console.log(`[스케줄] 포스팅 완료: ${url}`);
-
-      // 실행 완료 기록
-      await safeFetch(`${RAILWAY_URL}/api/schedule`, {
-        method: "POST",
-        headers: { ...API_HEADERS, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "mark-ran", id: schedule.id }),
-      });
-    } catch (e: unknown) {
-      console.error(`[스케줄] 실패:`, e instanceof Error ? e.message : e);
-    }
-  }
-}
-
-// ── main ───────────────────────────────────────────────────────────────────
-
-async function main(): Promise<void> {
-  if (!NAVER_ID || !NAVER_PW) {
-    console.error("[포스터] NAVER_ID / NAVER_PW 미설정");
+  const autoRes = await safeFetch(`${RAILWAY_URL}/api/auto-run`, {
+    method: "POST",
+    headers: { ...API_HEADERS, "Content-Type": "application/json" },
+  });
+  if (!autoRes || !autoRes.ok) {
+    console.error("[포스터] 콘텐츠 생성 실패");
     return;
   }
 
-  // 대기 포스트가 있으면 처리 (UI에서 수동 트리거)
-  const posted = await processPendingPost();
-  if (posted) return; // 이번 분에 이미 포스팅했으면 스케줄 체크 스킵
+  const autoData = (await autoRes.json()) as {
+    success: boolean;
+    topic?: string;
+    blogTitle?: string;
+    blogContent?: string;
+    tags?: string[];
+    error?: string;
+  };
 
-  // 스케줄 확인 및 실행
-  await processSchedules();
+  if (!autoData.success || !autoData.blogTitle || !autoData.blogContent) {
+    console.error("[포스터] 콘텐츠 데이터 오류:", autoData.error);
+    return;
+  }
+
+  console.log(`[포스터] 콘텐츠 생성 완료: "${autoData.blogTitle}"`);
+
+  const url = await postToNaverBlogPlaywright(
+    NAVER_ID, NAVER_PW, NAVER_BLOG_ID,
+    autoData.blogTitle,
+    autoData.blogContent,
+    autoData.tags ?? [],
+    []
+  );
+  console.log(`[포스터] 자동 포스팅 완료: ${url}`);
+}
+
+async function main(): Promise<void> {
+  if (!NAVER_ID || !NAVER_PW) {
+    console.error("[포스터] NAVER_ID / NAVER_PW 미설정 — .env.local 확인");
+    return;
+  }
+
+  console.log(`[포스터] ${new Date().toLocaleString("ko-KR")} 시작`);
+
+  const hasPending = await processPendingPost();
+  if (!hasPending) {
+    await runAutoPost();
+  }
+
+  console.log(`[포스터] ${new Date().toLocaleString("ko-KR")} 완료`);
 }
 
 main().catch((e: unknown) => {

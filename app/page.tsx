@@ -1716,9 +1716,13 @@ export default function HomePage() {
                   </div>
                 )}
 
-                <p className="text-[10px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
-                  로컬 PC의 자동 포스터(1분마다 실행)가 스케줄을 확인합니다. 스케줄 실행 시 대만 뉴스 기반 콘텐츠를 자동 생성 후 네이버에 포스팅합니다.
-                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 space-y-1.5">
+                  <p className="text-[11px] font-semibold text-amber-700">스케줄 추가/변경 후 로컬 PC에서 1회 실행 필요</p>
+                  <code className="block text-[10px] text-amber-800 bg-amber-100 rounded px-2 py-1 break-all">
+                    powershell -ExecutionPolicy Bypass -File &quot;C:\Users\ADMIN\Desktop\tianxia-cardnews\scripts\sync-schedules.ps1&quot;
+                  </code>
+                  <p className="text-[10px] text-amber-600">실행하면 설정한 요일/시간에 맞게 Windows 작업 스케줄러에 등록됩니다.</p>
+                </div>
               </section>
             </div>
           </div>
