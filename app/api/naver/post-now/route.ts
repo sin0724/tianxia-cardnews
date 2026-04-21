@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
-import { loadAccounts } from "@/lib/accountConfig";
+import { loadAccounts, type NaverAccount } from "@/lib/accountConfig";
 import { postToNaverBlogPlaywright } from "@/lib/naverBlogPlaywright";
 import fs from "fs";
 import path from "path";
@@ -21,15 +21,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "title, content 필수" }, { status: 400 });
   }
 
-  // 계정 확인
-  const accounts = loadAccounts();
-  if (accounts.length === 0) {
+  // 계정 확인 — 환경변수 우선, 파일 폴백
+  const naverId = process.env.NAVER_ID;
+  const naverPw = process.env.NAVER_PW;
+  const blogId  = process.env.NAVER_BLOG_ID ?? naverId;
+
+  const account: NaverAccount | undefined = (naverId && naverPw)
+    ? { name: "기본", naverId, naverPw, blogId: blogId ?? naverId }
+    : loadAccounts()[0];
+
+  if (!account) {
     return NextResponse.json(
-      { error: "config/naver-accounts.json 에 계정을 설정해주세요." },
+      { error: ".env.local 에 NAVER_ID, NAVER_PW, NAVER_BLOG_ID 를 설정해주세요." },
       { status: 400 }
     );
   }
-  const account = accounts[0];
 
   // base64 이미지 → 디스크 저장
   const tmpDir = path.join(os.tmpdir(), `tianxia-post-${Date.now()}`);
