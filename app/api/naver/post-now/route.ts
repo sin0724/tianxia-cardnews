@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     images?: string[];
   };
 
-  if (!title || !content) {
+  if (!title || typeof title !== "string" || !content || typeof content !== "string") {
     return NextResponse.json({ error: "title, content 필수" }, { status: 400 });
   }
 

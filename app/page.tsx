@@ -127,7 +127,7 @@ export default function HomePage() {
   const [instantPosting, setInstantPosting] = useState(false);
   const [postingStep, setPostingStep] = useState("");
   const [instantResult, setInstantResult] = useState<{
-    topic?: string; blogTitle?: string; postUrl?: string; log?: string[]; error?: string;
+    topic?: string; blogTitle?: string; postUrl?: string; queued?: boolean; log?: string[]; error?: string;
   } | null>(null);
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [schedTime, setSchedTime] = useState("09:00");
@@ -224,7 +224,11 @@ export default function HomePage() {
       const postData = await postRes.json();
       if (!postRes.ok) throw new Error(postData.error ?? "포스팅 실패");
 
-      setInstantResult({ blogTitle: blog!.title, postUrl: postData.postUrl });
+      if (postData.queued) {
+        setInstantResult({ blogTitle: blog!.title, queued: true });
+      } else {
+        setInstantResult({ blogTitle: blog!.title, postUrl: postData.postUrl });
+      }
     } catch (e) {
       setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
     } finally {
@@ -280,7 +284,11 @@ export default function HomePage() {
       const postData = await postRes.json();
       if (!postRes.ok) throw new Error(postData.error ?? "포스팅 실패");
 
-      setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, postUrl: postData.postUrl });
+      if (postData.queued) {
+        setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, queued: true });
+      } else {
+        setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, postUrl: postData.postUrl });
+      }
     } catch (e) {
       setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
     } finally {
@@ -1530,9 +1538,24 @@ export default function HomePage() {
 
               {/* 결과 */}
               {instantResult && (
-                <div className={`rounded-xl p-4 space-y-2 ${instantResult.error ? "bg-red-50 border border-red-100" : "bg-green-50 border border-green-100"}`}>
+                <div className={`rounded-xl p-4 space-y-2 ${
+                  instantResult.error
+                    ? "bg-red-50 border border-red-100"
+                    : instantResult.queued
+                    ? "bg-blue-50 border border-blue-100"
+                    : "bg-green-50 border border-green-100"
+                }`}>
                   {instantResult.error ? (
                     <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
+                  ) : instantResult.queued ? (
+                    <>
+                      <p className="text-xs font-bold text-blue-700">⏳ 대기열에 저장됐습니다</p>
+                      <div className="space-y-1">
+                        {instantResult.topic && <p className="text-xs text-gray-700"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
+                        <p className="text-xs text-gray-700"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
+                        <p className="text-xs text-blue-600">로컬 PC의 자동 포스터가 곧 네이버에 포스팅합니다. (약 1분 이내)</p>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <p className="text-xs font-bold text-green-700">✅ 포스팅 완료!</p>
