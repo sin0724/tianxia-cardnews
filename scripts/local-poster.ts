@@ -38,16 +38,34 @@ async function main(): Promise<void> {
   }
 
   // 1. Railway에서 대기 포스트 조회
-  const res = await fetch(`${RAILWAY_URL}/api/pending-post`, {
-    headers: { "x-user-api-key": API_KEY },
-  }).catch((e: unknown) => {
+  let res: Response;
+  try {
+    res = await fetch(`${RAILWAY_URL}/api/pending-post`, {
+      headers: { "x-user-api-key": API_KEY },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (e: unknown) {
     console.error("[포스터] Railway 연결 실패:", e instanceof Error ? e.message : e);
-    process.exit(1);
-  });
+    return;
+  }
+
+  if (!res.ok) {
+    console.log(`[포스터] ${new Date().toLocaleTimeString("ko-KR")} — Railway 응답 오류 (${res.status})`);
+    return;
+  }
 
   const post = (await res.json()) as PendingPost | null;
-  if (!post) {
-    console.log(`[포스터] ${new Date().toLocaleTimeString("ko-KR")} — 대기 포스트 없음`);
+  if (!post || typeof post !== "object" || !post.title || !post.content) {
+    if (post && typeof post === "object" && "title" in post) {
+      // 깨진 포스트가 있으면 삭제
+      console.log("[포스터] 유효하지 않은 대기 포스트 — 자동 삭제");
+      await fetch(`${RAILWAY_URL}/api/pending-post`, {
+        method: "DELETE",
+        headers: { "x-user-api-key": API_KEY },
+      }).catch(() => {});
+    } else {
+      console.log(`[포스터] ${new Date().toLocaleTimeString("ko-KR")} — 대기 포스트 없음`);
+    }
     return;
   }
 
