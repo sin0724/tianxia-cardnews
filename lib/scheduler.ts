@@ -5,9 +5,10 @@ const SCHEDULE_FILE = "/tmp/tianxia-schedules.json";
 export interface ScheduleEntry {
   id: string;
   label: string;
-  type: "daily" | "once";
-  time: string;   // "HH:MM" KST
-  date?: string;  // "YYYY-MM-DD" — once 타입일 때
+  type: "daily" | "weekly" | "once";
+  time: string;         // "HH:MM" KST
+  weekdays?: number[];  // 0=일,1=월,2=화,3=수,4=목,5=금,6=토 — weekly 타입
+  date?: string;        // "YYYY-MM-DD" — once 타입
   enabled: boolean;
   createdAt: string;
   lastRanAt?: string;
@@ -57,22 +58,28 @@ export function markRan(id: string): void {
   saveSchedules(schedules);
 }
 
-/** 현재 시각(KST)이 실행해야 할 스케줄인지 확인 */
+/** 현재 시각(KST)에 실행해야 할 스케줄 반환 */
 export function getDueSchedules(nowKST: Date): ScheduleEntry[] {
   const HH = String(nowKST.getHours()).padStart(2, "0");
   const MM = String(nowKST.getMinutes()).padStart(2, "0");
   const currentTime = `${HH}:${MM}`;
   const currentDate = nowKST.toISOString().slice(0, 10);
+  const currentDay = nowKST.getDay(); // 0=일...6=토
 
   return loadSchedules().filter((s) => {
     if (!s.enabled) return false;
     if (s.time !== currentTime) return false;
-    if (s.type === "once" && s.date !== currentDate) return false;
 
-    // 동일 분에 이미 실행된 경우 스킵
+    if (s.type === "once") {
+      if (s.date !== currentDate) return false;
+    } else if (s.type === "weekly") {
+      if (!s.weekdays?.includes(currentDay)) return false;
+    }
+    // daily: 요일 무관
+
+    // 같은 분에 이미 실행됐으면 스킵
     if (s.lastRanAt) {
-      const lastRan = new Date(s.lastRanAt);
-      const lastKST = new Date(lastRan.getTime() + 9 * 60 * 60 * 1000);
+      const lastKST = new Date(new Date(s.lastRanAt).getTime() + 9 * 60 * 60 * 1000);
       if (
         lastKST.getHours() === nowKST.getHours() &&
         lastKST.getMinutes() === nowKST.getMinutes() &&
@@ -84,3 +91,5 @@ export function getDueSchedules(nowKST: Date): ScheduleEntry[] {
     return true;
   });
 }
+
+export const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"] as const;

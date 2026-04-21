@@ -131,8 +131,9 @@ export default function HomePage() {
   } | null>(null);
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [schedTime, setSchedTime] = useState("09:00");
-  const [schedType, setSchedType] = useState<"daily" | "once">("daily");
+  const [schedType, setSchedType] = useState<"daily" | "weekly" | "once">("weekly");
   const [schedDate, setSchedDate] = useState("");
+  const [schedWeekdays, setSchedWeekdays] = useState<number[]>([1, 3, 5]); // 월/수/금
   const [schedLoading, setSchedLoading] = useState(false);
 
   const [trendsLoading, setTrendsLoading] = useState(false);
@@ -299,12 +300,18 @@ export default function HomePage() {
 
   async function handleAddSchedule() {
     if (!schedTime) return;
+    if (schedType === "weekly" && schedWeekdays.length === 0) return;
     setSchedLoading(true);
     try {
       await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ time: schedTime, type: schedType, date: schedDate || undefined }),
+        body: JSON.stringify({
+          time: schedTime,
+          type: schedType,
+          date: schedDate || undefined,
+          weekdays: schedType === "weekly" ? schedWeekdays : undefined,
+        }),
       });
       await loadSchedules();
       setSchedDate("");
@@ -1584,28 +1591,54 @@ export default function HomePage() {
                 {/* 예약 추가 폼 */}
                 <div className="bg-gray-50 rounded-xl p-4 space-y-3">
                   <p className="text-xs font-semibold text-gray-600">새 예약 추가</p>
-                  <div className="flex gap-2">
-                    <div className="flex-1 space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">시간 (KST)</label>
-                      <input
-                        type="time"
-                        value={schedTime}
-                        onChange={(e) => setSchedTime(e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
-                      />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">반복</label>
-                      <select
-                        value={schedType}
-                        onChange={(e) => setSchedType(e.target.value as "daily" | "once")}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
+
+                  {/* 반복 타입 */}
+                  <div className="flex gap-1.5">
+                    {(["weekly", "daily", "once"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setSchedType(t)}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          schedType === t
+                            ? "bg-[#DC2626] text-white"
+                            : "bg-white border border-gray-200 text-gray-500 hover:border-gray-400"
+                        }`}
                       >
-                        <option value="daily">매일</option>
-                        <option value="once">한 번만</option>
-                      </select>
-                    </div>
+                        {t === "weekly" ? "요일 반복" : t === "daily" ? "매일" : "한 번만"}
+                      </button>
+                    ))}
                   </div>
+
+                  {/* 요일 선택 */}
+                  {schedType === "weekly" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">요일 선택</label>
+                      <div className="flex gap-1">
+                        {["일", "월", "화", "수", "목", "금", "토"].map((d, i) => {
+                          const active = schedWeekdays.includes(i);
+                          return (
+                            <button
+                              key={i}
+                              onClick={() =>
+                                setSchedWeekdays((prev) =>
+                                  active ? prev.filter((v) => v !== i) : [...prev, i].sort()
+                                )
+                              }
+                              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                                active
+                                  ? "bg-[#DC2626] text-white"
+                                  : "bg-white border border-gray-200 text-gray-400 hover:border-gray-400"
+                              }`}
+                            >
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 날짜 선택 (한 번만) */}
                   {schedType === "once" && (
                     <div className="space-y-1">
                       <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">날짜</label>
@@ -1618,9 +1651,25 @@ export default function HomePage() {
                       />
                     </div>
                   )}
+
+                  {/* 시간 */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">시간 (KST)</label>
+                    <input
+                      type="time"
+                      value={schedTime}
+                      onChange={(e) => setSchedTime(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626] bg-white"
+                    />
+                  </div>
+
                   <button
                     onClick={handleAddSchedule}
-                    disabled={schedLoading || (schedType === "once" && !schedDate)}
+                    disabled={
+                      schedLoading ||
+                      (schedType === "once" && !schedDate) ||
+                      (schedType === "weekly" && schedWeekdays.length === 0)
+                    }
                     className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
                     {schedLoading ? <><Spinner /> 저장 중...</> : "+ 예약 추가"}
@@ -1643,8 +1692,13 @@ export default function HomePage() {
                           <div>
                             <p className="text-sm font-semibold text-gray-800">{s.time} KST</p>
                             <p className="text-xs text-gray-400">
-                              {s.type === "daily" ? "매일" : `${s.date} 한 번`}
-                              {s.lastRanAt && ` · 마지막 실행: ${new Date(s.lastRanAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                              {s.type === "weekly"
+                                ? `매주 ${(s.weekdays ?? []).map((d) => ["일","월","화","수","목","금","토"][d]).join("/")} `
+                                : s.type === "daily"
+                                ? "매일 "
+                                : `${s.date} 한 번 `}
+                              {s.time} KST
+                              {s.lastRanAt && ` · 마지막: ${new Date(s.lastRanAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
                             </p>
                           </div>
                         </div>
@@ -1663,7 +1717,7 @@ export default function HomePage() {
                 )}
 
                 <p className="text-[10px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
-                  서버(Railway)에서 매 분 스케줄을 확인합니다. 앱이 배포된 상태라면 브라우저 없이도 자동으로 실행됩니다.
+                  로컬 PC의 자동 포스터(1분마다 실행)가 스케줄을 확인합니다. 스케줄 실행 시 대만 뉴스 기반 콘텐츠를 자동 생성 후 네이버에 포스팅합니다.
                 </p>
               </section>
             </div>
