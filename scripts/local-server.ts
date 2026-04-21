@@ -1,6 +1,9 @@
 /**
  * 로컬 HTTP 서버 — Windows 시작 시 자동 실행
- * 브라우저(Railway UI)에서 localhost:3939 직접 호출 → 즉시 Playwright 포스팅
+ * - POST /post       : 즉시 Playwright 포스팅
+ * - GET  /schedules  : 로컬 스케줄 목록
+ * - POST /schedules  : 스케줄 추가/토글/삭제
+ * - GET  /health     : 서버 상태
  */
 import * as http from "http";
 import * as fs from "fs";
@@ -19,17 +22,46 @@ function loadEnv(): void {
 
 loadEnv();
 
-const PORT        = 3939;
-const NAVER_ID    = process.env.NAVER_ID ?? "";
-const NAVER_PW    = process.env.NAVER_PW ?? "";
+const PORT          = 3939;
+const NAVER_ID      = process.env.NAVER_ID ?? "";
+const NAVER_PW      = process.env.NAVER_PW ?? "";
 const NAVER_BLOG_ID = process.env.NAVER_BLOG_ID ?? NAVER_ID;
+const SCHEDULE_FILE = path.join(__dirname, "..", "tianxia-schedules.json");
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Content-Type": "application/json",
 };
+
+// ── 스케줄 CRUD ──────────────────────────────────────────────────────────────
+
+interface ScheduleEntry {
+  id: string;
+  label: string;
+  type: "daily" | "weekly" | "once";
+  time: string;
+  weekdays?: number[];
+  date?: string;
+  enabled: boolean;
+  createdAt: string;
+  lastRanAt?: string;
+}
+
+function loadSchedules(): ScheduleEntry[] {
+  try {
+    return JSON.parse(fs.readFileSync(SCHEDULE_FILE, "utf-8")) as ScheduleEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function saveSchedules(entries: ScheduleEntry[]): void {
+  fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(entries, null, 2));
+}
+
+// ── 포스팅 ───────────────────────────────────────────────────────────────────
 
 let busy = false;
 
@@ -38,14 +70,18 @@ function respond(res: http.ServerResponse, status: number, body: object): void {
   res.end(JSON.stringify(body));
 }
 
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => resolve(raw));
+  });
+}
+
 async function handlePost(body: {
-  title: string;
-  content: string;
-  tags?: string[];
-  images?: string[];
+  title: string; content: string; tags?: string[]; images?: string[];
 }): Promise<string> {
   const { title, content, tags = [], images = [] } = body;
-
   const tmpDir = path.join(os.tmpdir(), `tianxia-post-${Date.now()}`);
   const imagePaths: string[] = [];
 
@@ -60,75 +96,133 @@ async function handlePost(body: {
   }
 
   try {
-    const url = await postToNaverBlogPlaywright(
-      NAVER_ID, NAVER_PW, NAVER_BLOG_ID,
-      title, content, tags, imagePaths
+    return await postToNaverBlogPlaywright(
+      NAVER_ID, NAVER_PW, NAVER_BLOG_ID, title, content, tags, imagePaths
     );
-    return url;
   } finally {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
-const server = http.createServer((req, res) => {
+// ── 라우터 ───────────────────────────────────────────────────────────────────
+
+const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS_HEADERS);
     res.end();
     return;
   }
 
-  if (req.method === "GET" && req.url === "/health") {
+  const url = req.url ?? "/";
+
+  // GET /health
+  if (req.method === "GET" && url === "/health") {
     respond(res, 200, { ok: true, busy });
     return;
   }
 
-  if (req.method === "POST" && req.url === "/post") {
-    if (busy) {
-      respond(res, 429, { error: "이미 포스팅 진행 중입니다. 잠시 후 다시 시도하세요." });
-      return;
-    }
-    if (!NAVER_ID || !NAVER_PW) {
-      respond(res, 500, { error: "NAVER_ID / NAVER_PW 미설정 — .env.local 확인" });
-      return;
-    }
-
-    let raw = "";
-    req.on("data", (chunk) => { raw += chunk; });
-    req.on("end", () => {
-      let body: { title: string; content: string; tags?: string[]; images?: string[] };
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        respond(res, 400, { error: "JSON 파싱 오류" });
-        return;
-      }
-
-      if (!body.title || !body.content) {
-        respond(res, 400, { error: "title, content 필수" });
-        return;
-      }
-
-      busy = true;
-      console.log(`[서버] 포스팅 시작: "${body.title}"`);
-
-      handlePost(body)
-        .then((postUrl) => {
-          console.log(`[서버] 포스팅 완료: ${postUrl}`);
-          respond(res, 200, { ok: true, postUrl });
-        })
-        .catch((e: unknown) => {
-          const msg = e instanceof Error ? e.message : String(e);
-          console.error(`[서버] 포스팅 오류:`, msg);
-          respond(res, 500, { error: msg });
-        })
-        .finally(() => { busy = false; });
-    });
+  // GET /schedules
+  if (req.method === "GET" && url === "/schedules") {
+    respond(res, 200, loadSchedules());
     return;
   }
 
-  respond(res, 404, { error: "Not found" });
+  // POST /schedules  — body: { action?, ...fields }
+  if (req.method === "POST" && url === "/schedules") {
+    const raw = await readBody(req);
+    let body: Record<string, unknown>;
+    try { body = JSON.parse(raw); } catch {
+      respond(res, 400, { error: "invalid JSON" });
+      return;
+    }
+
+    const action = body.action as string | undefined;
+    const schedules = loadSchedules();
+
+    if (action === "delete") {
+      saveSchedules(schedules.filter((s) => s.id !== body.id));
+      respond(res, 200, { ok: true });
+      return;
+    }
+
+    if (action === "toggle") {
+      saveSchedules(schedules.map((s) =>
+        s.id === body.id ? { ...s, enabled: !s.enabled } : s
+      ));
+      respond(res, 200, { ok: true });
+      return;
+    }
+
+    // Add new schedule
+    const weekdayNames = ["일", "월", "화", "수", "목", "금", "토"];
+    const type = body.type as ScheduleEntry["type"];
+    const weekdays = body.weekdays as number[] | undefined;
+    const date = body.date as string | undefined;
+    const time = body.time as string;
+
+    const label =
+      type === "weekly" && weekdays?.length
+        ? `매주 ${weekdays.map((d) => weekdayNames[d]).join("/")} ${time}`
+        : type === "daily"
+        ? `매일 ${time}`
+        : `${date} ${time} 한 번`;
+
+    const newEntry: ScheduleEntry = {
+      id: `sched_${Date.now()}`,
+      label,
+      type,
+      time,
+      weekdays: type === "weekly" ? weekdays : undefined,
+      date: type === "once" ? date : undefined,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    saveSchedules([...schedules, newEntry]);
+    respond(res, 200, newEntry);
+    return;
+  }
+
+  // POST /post
+  if (req.method === "POST" && url === "/post") {
+    if (busy) {
+      respond(res, 429, { error: "posting in progress, please wait" });
+      return;
+    }
+    if (!NAVER_ID || !NAVER_PW) {
+      respond(res, 500, { error: "NAVER_ID / NAVER_PW not set in .env.local" });
+      return;
+    }
+
+    const raw = await readBody(req);
+    let body: { title: string; content: string; tags?: string[]; images?: string[] };
+    try { body = JSON.parse(raw); } catch {
+      respond(res, 400, { error: "invalid JSON" });
+      return;
+    }
+    if (!body.title || !body.content) {
+      respond(res, 400, { error: "title and content required" });
+      return;
+    }
+
+    busy = true;
+    console.log(`[server] posting: "${body.title}"`);
+    handlePost(body)
+      .then((postUrl) => {
+        console.log(`[server] done: ${postUrl}`);
+        respond(res, 200, { ok: true, postUrl });
+      })
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[server] error:`, msg);
+        respond(res, 500, { error: msg });
+      })
+      .finally(() => { busy = false; });
+    return;
+  }
+
+  respond(res, 404, { error: "not found" });
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`[서버] localhost:${PORT} 시작 — ${new Date().toLocaleString("ko-KR")}`);
+  console.log(`[server] localhost:${PORT} started — ${new Date().toLocaleString("ko-KR")}`);
 });

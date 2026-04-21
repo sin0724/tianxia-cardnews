@@ -168,15 +168,15 @@ export default function HomePage() {
     loadSchedules();
   }, []);
 
+  const LOCAL_SERVER = "http://localhost:3939";
+
   async function loadSchedules() {
     try {
-      const res = await fetch("/api/schedule");
+      const res = await fetch(`${LOCAL_SERVER}/schedules`, { signal: AbortSignal.timeout(3000) });
       const data = await res.json();
-      setSchedules(data);
-    } catch { /* ignore */ }
+      setSchedules(Array.isArray(data) ? data : []);
+    } catch { /* local server not running */ }
   }
-
-  const LOCAL_SERVER = "http://localhost:3939";
 
   /** localhost:3939 로컬 서버로 즉시 포스팅 */
   async function postViaLocalServer(title: string, content: string, tags: string[], images: string[]): Promise<string> {
@@ -290,7 +290,7 @@ export default function HomePage() {
     if (schedType === "weekly" && schedWeekdays.length === 0) return;
     setSchedLoading(true);
     try {
-      await fetch("/api/schedule", {
+      await fetch(`${LOCAL_SERVER}/schedules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -307,20 +307,24 @@ export default function HomePage() {
   }
 
   async function handleToggleSchedule(id: string) {
-    await fetch("/api/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "toggle", id }),
-    });
+    try {
+      await fetch(`${LOCAL_SERVER}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggle", id }),
+      });
+    } catch { /* ignore */ }
     await loadSchedules();
   }
 
   async function handleDeleteSchedule(id: string) {
-    await fetch("/api/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", id }),
-    });
+    try {
+      await fetch(`${LOCAL_SERVER}/schedules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id }),
+      });
+    } catch { /* ignore */ }
     await loadSchedules();
   }
 
