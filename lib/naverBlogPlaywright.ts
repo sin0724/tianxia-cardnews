@@ -55,15 +55,28 @@ export async function postToNaverBlogPlaywright(
       await loginWithCredentials(page, naverId, naverPw);
     }
 
-    // ── 2. 글쓰기 페이지 (naverpost: GoBlogWrite.naver) ──
+    // ── 2. 글쓰기 페이지 ──
+    // GoBlogWrite 시도 → mainFrame 없으면 PostWriteForm(blogId 명시)으로 폴백
     await page.goto("https://blog.naver.com/GoBlogWrite.naver", {
-      waitUntil: "domcontentloaded",
+      waitUntil: "networkidle",
       timeout: 30000,
     });
     await page.waitForTimeout(2000);
 
+    // mainFrame이 없으면 blogId 명시 URL로 재시도
+    let mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
+    if (!mainFrameVisible) {
+      console.log("[Naver] GoBlogWrite에 mainFrame 없음 → PostWriteForm으로 재시도");
+      await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${naverId}`, {
+        waitUntil: "networkidle",
+        timeout: 30000,
+      });
+      await page.waitForTimeout(2000);
+      mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
+    }
+
     // ── 3. mainFrame iframe 진입 ──
-    await page.waitForSelector("#mainFrame", { timeout: 20000 });
+    await page.waitForSelector("#mainFrame", { timeout: 30000 });
     await page.waitForTimeout(3000); // SmartEditor 초기화 대기
 
     const mainFrame = getMainFrame(page);
