@@ -2,8 +2,8 @@ param()
 
 $ProjectDir = "C:\Users\ADMIN\Desktop\tianxia-cardnews"
 
-# ── 1분 폴링 태스크 완전 제거 ──────────────────────────────────────────────
-foreach ($old in @("TianxiaLocalPoster", "TianxiaNaverPoster")) {
+# ── 기존 태스크 모두 제거 ────────────────────────────────────────────────────
+foreach ($old in @("TianxiaLocalPoster", "TianxiaNaverPoster", "TianxiaAutoRun")) {
   Unregister-ScheduledTask -TaskName $old -Confirm:$false -ErrorAction SilentlyContinue
   Write-Host "[$old] 제거 완료" -ForegroundColor DarkGray
 }
@@ -11,33 +11,29 @@ Get-ScheduledTask | Where-Object { $_.TaskName -like "TianxiaPoster_*" } | ForEa
   Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-# ── 일일 자동화 (TianxiaAutoRun) — 백그라운드 전용 ────────────────────────
-$AutoTask   = "TianxiaAutoRun"
-$AutoScript = "$ProjectDir\scripts\run-auto.ps1"
+# ── 1. 즉시발행 대기열 폴러 (TianxiaLocalPoster) ─────────────────────────────
+# 1분마다 실행 — 창 없이 백그라운드, pending-post가 있을 때만 실제 발행
+$PosterTask   = "TianxiaLocalPoster"
+$PosterScript = "$ProjectDir\scripts\run-poster.ps1"
 
-@"
-Set-Location "$ProjectDir"
-& npx tsx scripts\local-auto-run.ts 2>&1 | Out-File -Append -FilePath "`$env:TEMP\tianxia-auto-run.log" -Encoding utf8
-"@ | Out-File -FilePath $AutoScript -Encoding utf8
+$PosterAction   = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$PosterScript`""
+$PosterTrigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 1) `
+  -Once -At (Get-Date) -RepetitionDuration ([TimeSpan]::MaxValue)
+$PosterSettings = New-ScheduledTaskSettingsSet -Hidden `
+  -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable `
+  -MultipleInstances IgnoreNew
 
-Unregister-ScheduledTask -TaskName $AutoTask -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName $PosterTask -Action $PosterAction -Trigger $PosterTrigger `
+  -Settings $PosterSettings -RunLevel Highest -Force | Out-Null
 
-$AutoAction   = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$AutoScript`""
-$AutoTrigger  = New-ScheduledTaskTrigger -Daily -At "09:00AM"
-$AutoSettings = New-ScheduledTaskSettingsSet -Hidden `
-  -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable
+Write-Host "[$PosterTask] 등록 완료 — 1분마다 대기열 확인 (백그라운드)" -ForegroundColor Green
 
-Register-ScheduledTask -TaskName $AutoTask -Action $AutoAction -Trigger $AutoTrigger `
-  -Settings $AutoSettings -RunLevel Highest -Force | Out-Null
-
-Write-Host "[$AutoTask] 등록 완료 — 매일 09:00 백그라운드 실행" -ForegroundColor Green
-
+# ── 2. 예약발행 스케줄 등록 (TianxiaPoster_*) ────────────────────────────────
 Write-Host ""
-Write-Host "설정 완료!" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "스케줄 등록 (UI에서 추가한 요일/시간 적용):" -ForegroundColor Yellow
+Write-Host "예약발행 스케줄 등록:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File `"$ProjectDir\scripts\sync-schedules.ps1`"" -ForegroundColor White
 Write-Host ""
 Write-Host "로그 확인:" -ForegroundColor Gray
-Write-Host "  Get-Content `$env:TEMP\tianxia-poster.log -Tail 20" -ForegroundColor Gray
+Write-Host "  즉시발행: Get-Content `$env:TEMP\tianxia-poster.log -Tail 20" -ForegroundColor Gray
+Write-Host "  예약발행: Get-Content `$env:TEMP\tianxia-schedule.log -Tail 20" -ForegroundColor Gray

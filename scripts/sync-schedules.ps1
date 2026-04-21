@@ -18,7 +18,7 @@ if (-not $ApiKey) {
 }
 
 $ProjectDir = "$PSScriptRoot\.."
-$RunScript  = "$ProjectDir\scripts\run-poster.ps1"
+$RunScript  = "$ProjectDir\scripts\run-schedule.ps1"
 
 # Railway 에서 스케줄 목록 가져오기
 Write-Host "Railway 스케줄 조회 중..." -ForegroundColor Cyan

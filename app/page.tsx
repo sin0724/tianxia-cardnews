@@ -1483,115 +1483,115 @@ export default function HomePage() {
             {/* 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
               <div>
-                <h3 className="text-base font-bold text-[#1A1A1A]">⚡ 자동 포스팅</h3>
-                <p className="text-xs text-gray-400 mt-0.5">대만 뉴스 → 카드뉴스 → 네이버 블로그 자동화</p>
+                <h3 className="text-base font-bold text-[#1A1A1A]">네이버 블로그 발행</h3>
+                <p className="text-xs text-gray-400 mt-0.5">즉시 발행 또는 예약 발행을 선택하세요</p>
               </div>
               <button onClick={() => setAutoOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* ── 현재 카드뉴스로 포스팅 ── */}
-              {content && (
-                <section className="space-y-3">
-                  <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
-                    <span className="w-5 h-5 bg-[#DC2626] text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                    현재 카드뉴스로 포스팅
-                  </h4>
-                  <p className="text-xs text-gray-400">생성된 카드뉴스 5장을 이미지로 캡처해 블로그 원고와 함께 네이버에 포스팅합니다.</p>
+            <div className="p-6 space-y-5">
+
+              {/* ══════════ 즉시 발행 구역 ══════════ */}
+              <div className="rounded-2xl border-2 border-[#DC2626]/20 bg-red-50/30 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 bg-[#DC2626] text-white">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="text-sm font-bold">즉시 발행</span>
+                  <span className="ml-auto text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full">지금 바로</span>
+                </div>
+                <div className="p-4 space-y-3">
+                  <p className="text-xs text-gray-500">버튼을 누르면 바로 카드뉴스를 생성하고 네이버 블로그에 발행합니다. 로컬 PC가 켜져 있어야 합니다.</p>
+
+                  {content && (
+                    <button
+                      onClick={handlePostCurrent}
+                      disabled={instantPosting}
+                      className="w-full bg-[#DC2626] text-white py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    >
+                      {instantPosting ? (
+                        <><Spinner /> {postingStep || "포스팅 진행 중..."}</>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          현재 카드뉴스로 발행
+                        </>
+                      )}
+                    </button>
+                  )}
+
                   <button
-                    onClick={handlePostCurrent}
+                    onClick={handleInstantPost}
                     disabled={instantPosting}
-                    className="w-full bg-[#DC2626] text-white py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className={`w-full py-3 rounded-xl text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 ${
+                      content
+                        ? "bg-white border-2 border-[#DC2626] text-[#DC2626] hover:bg-red-50"
+                        : "bg-[#DC2626] text-white hover:bg-red-700"
+                    }`}
                   >
-                    {instantPosting ? (
-                      <><Spinner /> {postingStep || "포스팅 진행 중..."}</>
+                    {instantPosting && !content ? (
+                      <><Spinner /> {postingStep || "진행 중..."}</>
                     ) : (
                       <>
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
-                        현재 카드뉴스로 포스팅
+                        새로 생성하여 발행
                       </>
                     )}
                   </button>
-                </section>
-              )}
 
-              {/* ── 새로 생성 후 포스팅 ── */}
-              <section className="space-y-3">
-                <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
-                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">{content ? "2" : "1"}</span>
-                  새로 생성 후 포스팅
-                </h4>
-                <p className="text-xs text-gray-400">대만 뉴스 트렌드에서 주제를 골라 카드뉴스 + 블로그를 새로 만들고 포스팅합니다.</p>
-
-                <button
-                  onClick={handleInstantPost}
-                  disabled={instantPosting}
-                  className="w-full bg-[#1A1A1A] text-white py-3 rounded-xl text-sm font-bold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                >
-                  {instantPosting ? (
-                    <><Spinner /> {postingStep || "진행 중..."}</>
-                  ) : (
-                    <>
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      새로 생성 후 포스팅
-                    </>
-                  )}
-                </button>
-              </section>
-
-              {/* 결과 */}
-              {instantResult && (
-                <div className={`rounded-xl p-4 space-y-2 ${
-                  instantResult.error
-                    ? "bg-red-50 border border-red-100"
-                    : instantResult.queued
-                    ? "bg-blue-50 border border-blue-100"
-                    : "bg-green-50 border border-green-100"
-                }`}>
-                  {instantResult.error ? (
-                    <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
-                  ) : instantResult.queued ? (
-                    <>
-                      <p className="text-xs font-bold text-blue-700">⏳ 대기열에 저장됐습니다</p>
-                      <div className="space-y-1">
-                        {instantResult.topic && <p className="text-xs text-gray-700"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
-                        <p className="text-xs text-gray-700"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
-                        <p className="text-xs text-blue-600">로컬 PC의 자동 포스터가 곧 네이버에 포스팅합니다. (약 1분 이내)</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs font-bold text-green-700">✅ 포스팅 완료!</p>
-                      <div className="space-y-1">
-                        {instantResult.topic && <p className="text-xs text-gray-700"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
-                        <p className="text-xs text-gray-700"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
-                        {instantResult.postUrl && (
-                          <a href={instantResult.postUrl} target="_blank" rel="noopener noreferrer"
-                            className="text-xs text-blue-600 underline break-all">{instantResult.postUrl}</a>
-                        )}
-                      </div>
-                    </>
+                  {/* 결과 */}
+                  {instantResult && (
+                    <div className={`rounded-xl p-3 space-y-1.5 ${
+                      instantResult.error
+                        ? "bg-red-100 border border-red-200"
+                        : instantResult.queued
+                        ? "bg-blue-50 border border-blue-200"
+                        : "bg-green-50 border border-green-200"
+                    }`}>
+                      {instantResult.error ? (
+                        <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
+                      ) : instantResult.queued ? (
+                        <>
+                          <p className="text-xs font-bold text-blue-700">⏳ 대기열 저장 완료</p>
+                          {instantResult.topic && <p className="text-xs text-gray-600"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
+                          <p className="text-xs text-gray-600"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
+                          <p className="text-[10px] text-blue-600">로컬 PC 자동 포스터가 약 1분 이내 발행합니다.</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs font-bold text-green-700">✅ 발행 완료!</p>
+                          {instantResult.topic && <p className="text-xs text-gray-600"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
+                          <p className="text-xs text-gray-600"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
+                          {instantResult.postUrl && (
+                            <a href={instantResult.postUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-[10px] text-blue-600 underline break-all">{instantResult.postUrl}</a>
+                          )}
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
 
-              <div className="h-px bg-gray-100" />
-
-              {/* ── 예약 포스팅 ── */}
-              <section className="space-y-4">
-                <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
-                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">{content ? "3" : "2"}</span>
-                  예약 자동 포스팅
+              {/* ══════════ 예약 발행 구역 ══════════ */}
+              <div className="rounded-2xl border-2 border-gray-200 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 bg-[#1A1A1A] text-white">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-bold">예약 발행</span>
                   {schedules.length > 0 && (
-                    <span className="ml-auto text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                    <span className="ml-auto text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full">
                       {schedules.filter((s) => s.enabled).length}개 활성
                     </span>
                   )}
-                </h4>
+                </div>
+                <div className="p-4 space-y-4">
+                  <p className="text-xs text-gray-500">지정한 요일·시간에 로컬 PC가 자동으로 카드뉴스를 생성하고 발행합니다. 로컬 PC가 켜져 있어야 합니다.</p>
 
                 {/* 예약 추가 폼 */}
                 <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -1603,7 +1603,7 @@ export default function HomePage() {
                         onClick={() => setSchedType(t)}
                         className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
                           schedType === t
-                            ? "bg-[#DC2626] text-white"
+                            ? "bg-[#1A1A1A] text-white"
                             : "bg-white text-gray-400 hover:text-gray-600 hover:bg-gray-50"
                         }`}
                       >
@@ -1630,7 +1630,7 @@ export default function HomePage() {
                                 }
                                 className={`py-2 rounded-lg text-xs font-bold transition-all ${
                                   active
-                                    ? "bg-[#DC2626] text-white shadow-sm"
+                                    ? "bg-[#1A1A1A] text-white shadow-sm"
                                     : "bg-gray-100 text-gray-400 hover:bg-gray-200"
                                 }`}
                               >
@@ -1654,7 +1654,7 @@ export default function HomePage() {
                           value={schedDate}
                           onChange={(e) => setSchedDate(e.target.value)}
                           min={new Date().toISOString().slice(0, 10)}
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626]"
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400/20 focus:border-gray-400"
                         />
                       </div>
                     )}
@@ -1666,7 +1666,7 @@ export default function HomePage() {
                         type="time"
                         value={schedTime}
                         onChange={(e) => setSchedTime(e.target.value)}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-base font-bold focus:outline-none focus:ring-2 focus:ring-[#DC2626]/20 focus:border-[#DC2626]"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-base font-bold focus:outline-none focus:ring-2 focus:ring-gray-400/20 focus:border-gray-400"
                       />
                     </div>
 
@@ -1677,7 +1677,7 @@ export default function HomePage() {
                         (schedType === "once" && !schedDate) ||
                         (schedType === "weekly" && schedWeekdays.length === 0)
                       }
-                      className="w-full bg-[#DC2626] text-white py-2.5 rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                      className="w-full bg-[#1A1A1A] text-white py-2.5 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                     >
                       {schedLoading ? <><Spinner /> 저장 중...</> : (
                         <>
@@ -1700,7 +1700,7 @@ export default function HomePage() {
                         key={s.id}
                         className={`rounded-xl border transition-all ${
                           s.enabled
-                            ? "border-[#DC2626]/30 bg-red-50/40"
+                            ? "border-gray-800/20 bg-gray-50"
                             : "border-gray-200 bg-gray-50 opacity-60"
                         }`}
                       >
@@ -1709,7 +1709,7 @@ export default function HomePage() {
                           <button
                             onClick={() => handleToggleSchedule(s.id)}
                             className={`relative w-10 h-6 rounded-full flex-shrink-0 transition-colors duration-200 ${
-                              s.enabled ? "bg-[#DC2626]" : "bg-gray-300"
+                              s.enabled ? "bg-[#1A1A1A]" : "bg-gray-300"
                             }`}
                           >
                             <span
@@ -1778,7 +1778,9 @@ export default function HomePage() {
                     powershell -ExecutionPolicy Bypass -File &quot;C:\Users\ADMIN\Desktop\tianxia-cardnews\scripts\sync-schedules.ps1&quot;
                   </code>
                 </div>
-              </section>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
