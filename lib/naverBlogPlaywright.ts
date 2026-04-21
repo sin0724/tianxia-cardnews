@@ -15,6 +15,10 @@ export async function postToNaverBlogPlaywright(
   content: string,
   tags: string[]
 ): Promise<string> {
+  // 방어적 타입 처리
+  title   = (title   && title   !== "undefined") ? title   : "자동 포스팅";
+  content = (content && content !== "undefined") ? content : "";
+  tags    = Array.isArray(tags) ? tags : [];
   const cookiesJson = process.env.NAVER_COOKIES;
 
   const browser = await chromium.launch({
