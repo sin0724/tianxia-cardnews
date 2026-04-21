@@ -131,24 +131,31 @@ async function loginWithCookies(
   }
 
   await context.addCookies(cookies);
+  console.log(`[Naver] 쿠키 ${cookies.length}개 주입 완료`);
 
-  // 쿠키 유효성 확인 — 글쓰기 페이지 직접 접근
-  await page.goto("https://blog.naver.com/GoBlogWrite.naver", {
+  // 네이버 메인에서 로그인 상태 확인 (가장 안정적)
+  await page.goto("https://www.naver.com", {
     waitUntil: "domcontentloaded",
     timeout: 20000,
   });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(1500);
 
-  const url = page.url();
-  if (url.includes("nidlogin") || url.includes("login.naver")) {
+  const afterUrl = page.url();
+  console.log(`[Naver] 쿠키 확인 URL: ${afterUrl}`);
+
+  // 로그인 페이지로 리다이렉트된 경우만 실패 처리
+  const isLoginPage =
+    afterUrl.includes("nidlogin") ||
+    afterUrl.includes("login.naver") ||
+    afterUrl.includes("nid.naver.com/user2/help");
+
+  if (isLoginPage) {
     throw new Error(
       "NAVER_COOKIES가 만료되었습니다. 로컬에서 'npx tsx scripts/extract-naver-cookies.ts'를 다시 실행해 쿠키를 갱신하세요."
     );
   }
 
   console.log(`[Naver] 쿠키 인증 성공 (blogId: ${naverId})`);
-  // 이미 글쓰기 페이지에 있으므로 이후 goto 건너뜀을 위해 flag 설정
-  // → 바깥에서 GoBlogWrite 재방문해도 무방 (리로드)
 }
 
 async function loginWithCredentials(page: Page, naverId: string, naverPw: string): Promise<void> {
