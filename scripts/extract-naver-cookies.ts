@@ -58,19 +58,22 @@ async function main() {
   await page.waitForTimeout(300);
   // evaluate로 값 주입 (React 폼 호환)
   await page.evaluate(
-    ({ id, pw }: { id: string; pw: string }) => {
-      const setVal = (el: HTMLInputElement, val: string) => {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-        setter?.call(el, val);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-      };
+    ([id, pw]: [string, string]) => {
       const idEl = document.querySelector("#id") as HTMLInputElement;
       const pwEl = document.querySelector("#pw") as HTMLInputElement;
-      if (idEl) setVal(idEl, id);
-      if (pwEl) setVal(pwEl, pw);
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      if (idEl && setter) {
+        setter.call(idEl, id);
+        idEl.dispatchEvent(new Event("input", { bubbles: true }));
+        idEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (pwEl && setter) {
+        setter.call(pwEl, pw);
+        pwEl.dispatchEvent(new Event("input", { bubbles: true }));
+        pwEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     },
-    { id: naverId, pw: naverPw }
+    [naverId, naverPw] as [string, string]
   );
   await page.waitForTimeout(500);
 
@@ -101,12 +104,36 @@ async function main() {
     process.exit(1);
   }
 
+  // 블로그 글쓰기 페이지 방문 — 쓰기 전용 세션 쿠키 생성
+  const blogId = process.env.NAVER_BLOG_ID || naverId;
+  console.log(`\n블로그 글쓰기 페이지 방문 중 (blogId: ${blogId})...`);
+  await page.goto(`https://blog.naver.com/${blogId}`, {
+    waitUntil: "domcontentloaded",
+    timeout: 15000,
+  }).catch(() => null);
+  await page.waitForTimeout(1500);
+
+  await page.goto(`https://blog.naver.com/${blogId}?Redirect=Write`, {
+    waitUntil: "domcontentloaded",
+    timeout: 15000,
+  }).catch(() => null);
+  await page.waitForTimeout(2000);
+  console.log(`글쓰기 URL 방문 후 현재 URL: ${page.url()}`);
+
+  // GoBlogWrite도 방문
+  await page.goto("https://blog.naver.com/GoBlogWrite.naver", {
+    waitUntil: "domcontentloaded",
+    timeout: 15000,
+  }).catch(() => null);
+  await page.waitForTimeout(1500);
+
   // 네이버 관련 모든 쿠키 추출
   const allCookies = await context.cookies([
     "https://naver.com",
     "https://www.naver.com",
     "https://blog.naver.com",
     "https://nid.naver.com",
+    "https://section.blog.naver.com",
   ]);
 
   const naverCookies = allCookies.filter(
