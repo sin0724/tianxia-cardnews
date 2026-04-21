@@ -127,7 +127,7 @@ export default function HomePage() {
   const [instantPosting, setInstantPosting] = useState(false);
   const [postingStep, setPostingStep] = useState("");
   const [instantResult, setInstantResult] = useState<{
-    topic?: string; blogTitle?: string; postUrl?: string; queued?: boolean; log?: string[]; error?: string;
+    topic?: string; blogTitle?: string; postUrl?: string; log?: string[]; error?: string;
   } | null>(null);
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [schedTime, setSchedTime] = useState("09:00");
@@ -176,6 +176,21 @@ export default function HomePage() {
     } catch { /* ignore */ }
   }
 
+  const LOCAL_SERVER = "http://localhost:3939";
+
+  /** localhost:3939 로컬 서버로 즉시 포스팅 */
+  async function postViaLocalServer(title: string, content: string, tags: string[], images: string[]): Promise<string> {
+    const res = await fetch(`${LOCAL_SERVER}/post`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, content, tags, images }),
+      signal: AbortSignal.timeout(180000), // 3분
+    });
+    const data = await res.json() as { ok?: boolean; postUrl?: string; error?: string };
+    if (!res.ok || !data.ok) throw new Error(data.error ?? "포스팅 실패");
+    return data.postUrl ?? "";
+  }
+
   /** 현재 생성된 카드뉴스로 포스팅 */
   async function handlePostCurrent() {
     if (!content) return;
@@ -210,28 +225,14 @@ export default function HomePage() {
         blog = data;
       }
 
-      // 3. 네이버 포스팅
+      // 3. 로컬 서버로 즉시 포스팅
       setPostingStep("네이버 블로그 포스팅 중... (1~2분 소요)");
-      const postRes = await fetch("/api/naver/post-now", {
-        method: "POST",
-        headers: { ...apiHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: blog!.title,
-          content: blog!.content,
-          tags: blog!.tags,
-          images,
-        }),
-      });
-      const postData = await postRes.json();
-      if (!postRes.ok) throw new Error(postData.error ?? "포스팅 실패");
-
-      if (postData.queued) {
-        setInstantResult({ blogTitle: blog!.title, queued: true });
-      } else {
-        setInstantResult({ blogTitle: blog!.title, postUrl: postData.postUrl });
-      }
+      const postUrl = await postViaLocalServer(blog!.title, blog!.content, blog!.tags, images);
+      setInstantResult({ blogTitle: blog!.title, postUrl });
     } catch (e) {
-      setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
+      const msg = e instanceof Error ? e.message : "알 수 없는 오류";
+      const isServer = msg.includes("fetch") || msg.includes("Failed") || msg.includes("NetworkError");
+      setInstantResult({ error: isServer ? "로컬 서버에 연결할 수 없습니다. setup-task.ps1을 실행했는지 확인하세요." : msg });
     } finally {
       setInstantPosting(false);
       setPostingStep("");
@@ -256,7 +257,7 @@ export default function HomePage() {
       setContent(autoData.cardContent);
       setCaption(autoData.cardContent?.caption ?? "");
       setTopic(autoData.topic ?? "");
-      await new Promise((r) => setTimeout(r, 800)); // 렌더링 대기
+      await new Promise((r) => setTimeout(r, 800));
 
       setPostingStep("카드 이미지 캡처 중...");
       const images: string[] = [];
@@ -270,28 +271,14 @@ export default function HomePage() {
         images.push(canvas.toDataURL("image/png", 0.9));
       }
 
-      // 3. 네이버 포스팅
+      // 3. 로컬 서버로 즉시 포스팅
       setPostingStep("네이버 블로그 포스팅 중... (1~2분 소요)");
-      const postRes = await fetch("/api/naver/post-now", {
-        method: "POST",
-        headers: { ...apiHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: autoData.blogTitle,
-          content: autoData.blogContent,
-          tags: autoData.tags ?? [],
-          images,
-        }),
-      });
-      const postData = await postRes.json();
-      if (!postRes.ok) throw new Error(postData.error ?? "포스팅 실패");
-
-      if (postData.queued) {
-        setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, queued: true });
-      } else {
-        setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, postUrl: postData.postUrl });
-      }
+      const postUrl = await postViaLocalServer(autoData.blogTitle, autoData.blogContent, autoData.tags ?? [], images);
+      setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, postUrl });
     } catch (e) {
-      setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
+      const msg = e instanceof Error ? e.message : "알 수 없는 오류";
+      const isServer = msg.includes("fetch") || msg.includes("Failed") || msg.includes("NetworkError");
+      setInstantResult({ error: isServer ? "로컬 서버에 연결할 수 없습니다. setup-task.ps1을 실행했는지 확인하세요." : msg });
     } finally {
       setInstantPosting(false);
       setPostingStep("");
@@ -1546,21 +1533,10 @@ export default function HomePage() {
                   {/* 결과 */}
                   {instantResult && (
                     <div className={`rounded-xl p-3 space-y-1.5 ${
-                      instantResult.error
-                        ? "bg-red-100 border border-red-200"
-                        : instantResult.queued
-                        ? "bg-blue-50 border border-blue-200"
-                        : "bg-green-50 border border-green-200"
+                      instantResult.error ? "bg-red-100 border border-red-200" : "bg-green-50 border border-green-200"
                     }`}>
                       {instantResult.error ? (
                         <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
-                      ) : instantResult.queued ? (
-                        <>
-                          <p className="text-xs font-bold text-blue-700">⏳ 대기열 저장 완료</p>
-                          {instantResult.topic && <p className="text-xs text-gray-600"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
-                          <p className="text-xs text-gray-600"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
-                          <p className="text-[10px] text-blue-600">로컬 PC 자동 포스터가 약 1분 이내 발행합니다.</p>
-                        </>
                       ) : (
                         <>
                           <p className="text-xs font-bold text-green-700">✅ 발행 완료!</p>

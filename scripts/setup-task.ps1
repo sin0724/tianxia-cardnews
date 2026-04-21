@@ -3,7 +3,7 @@ param()
 $ProjectDir = "C:\Users\ADMIN\Desktop\tianxia-cardnews"
 
 # ── 기존 태스크 모두 제거 ────────────────────────────────────────────────────
-foreach ($old in @("TianxiaLocalPoster", "TianxiaNaverPoster", "TianxiaAutoRun")) {
+foreach ($old in @("TianxiaLocalPoster", "TianxiaNaverPoster", "TianxiaAutoRun", "TianxiaServer")) {
   Unregister-ScheduledTask -TaskName $old -Confirm:$false -ErrorAction SilentlyContinue
   Write-Host "[$old] 제거 완료" -ForegroundColor DarkGray
 }
@@ -11,29 +11,30 @@ Get-ScheduledTask | Where-Object { $_.TaskName -like "TianxiaPoster_*" } | ForEa
   Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false -ErrorAction SilentlyContinue
 }
 
-# ── 1. 즉시발행 대기열 폴러 (TianxiaLocalPoster) ─────────────────────────────
-# 1분마다 실행 — 창 없이 백그라운드, pending-post가 있을 때만 실제 발행
-$PosterTask   = "TianxiaLocalPoster"
-$PosterScript = "$ProjectDir\scripts\run-poster.ps1"
+# ── 즉시발행 로컬 서버 (TianxiaServer) — PC 시작 시 자동 실행 ──────────────
+$ServerTask   = "TianxiaServer"
+$ServerScript = "$ProjectDir\scripts\run-server.ps1"
 
-$PosterAction   = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$PosterScript`""
-$PosterTrigger  = New-ScheduledTaskTrigger -RepetitionInterval (New-TimeSpan -Minutes 1) `
-  -Once -At (Get-Date) -RepetitionDuration ([TimeSpan]::MaxValue)
-$PosterSettings = New-ScheduledTaskSettingsSet -Hidden `
-  -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable `
-  -MultipleInstances IgnoreNew
+$ServerAction   = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument "-WindowStyle Hidden -NonInteractive -ExecutionPolicy Bypass -File `"$ServerScript`""
+$ServerTrigger  = New-ScheduledTaskTrigger -AtLogOn
+$ServerSettings = New-ScheduledTaskSettingsSet -Hidden `
+  -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable `
+  -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 
-Register-ScheduledTask -TaskName $PosterTask -Action $PosterAction -Trigger $PosterTrigger `
-  -Settings $PosterSettings -RunLevel Highest -Force | Out-Null
+Register-ScheduledTask -TaskName $ServerTask -Action $ServerAction -Trigger $ServerTrigger `
+  -Settings $ServerSettings -RunLevel Highest -Force | Out-Null
 
-Write-Host "[$PosterTask] 등록 완료 — 1분마다 대기열 확인 (백그라운드)" -ForegroundColor Green
+Write-Host "[$ServerTask] 등록 완료 — PC 시작 시 localhost:3939 자동 실행" -ForegroundColor Green
 
-# ── 2. 예약발행 스케줄 등록 (TianxiaPoster_*) ────────────────────────────────
+# 바로 시작
+Start-ScheduledTask -TaskName $ServerTask
+Write-Host "[$ServerTask] 지금 바로 시작됨" -ForegroundColor Cyan
+
 Write-Host ""
 Write-Host "예약발행 스케줄 등록:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File `"$ProjectDir\scripts\sync-schedules.ps1`"" -ForegroundColor White
 Write-Host ""
 Write-Host "로그 확인:" -ForegroundColor Gray
-Write-Host "  즉시발행: Get-Content `$env:TEMP\tianxia-poster.log -Tail 20" -ForegroundColor Gray
-Write-Host "  예약발행: Get-Content `$env:TEMP\tianxia-schedule.log -Tail 20" -ForegroundColor Gray
+Write-Host "  서버: Get-Content `$env:TEMP\tianxia-server.log -Tail 20" -ForegroundColor Gray
+Write-Host "  예약: Get-Content `$env:TEMP\tianxia-schedule.log -Tail 20" -ForegroundColor Gray
