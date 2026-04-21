@@ -8,8 +8,9 @@ import { chromium, type Cookie, type Page, type Frame } from "playwright";
  *  2. ID/PW 로그인 — 로컬 전용
  */
 export async function postToNaverBlogPlaywright(
-  naverId: string,
+  naverId: string,   // 로그인 ID (예: b-567)
   naverPw: string,
+  blogId: string,    // 블로그 ID (예: influencercompany) — 로그인 ID와 다를 수 있음
   title: string,
   content: string,
   tags: string[]
@@ -50,49 +51,47 @@ export async function postToNaverBlogPlaywright(
   try {
     // ── 1. 인증 ──
     if (cookiesJson) {
-      await loginWithCookies(context, page, cookiesJson, naverId);
+      await loginWithCookies(context, page, cookiesJson, blogId);
     } else {
       await loginWithCredentials(page, naverId, naverPw);
     }
 
     // ── 2. 글쓰기 페이지 ──
-    // blog.naver.com 도메인 세션 먼저 확립 후 글쓰기 URL 진입
-    await page.goto("https://blog.naver.com", {
+    // 블로그 홈 먼저 방문해 도메인 세션 확립
+    await page.goto(`https://blog.naver.com/${blogId}`, {
       waitUntil: "domcontentloaded",
       timeout: 20000,
     });
     await page.waitForTimeout(1500);
-    console.log(`[Naver] blog.naver.com URL: ${page.url()}`);
+    console.log(`[Naver] 블로그 홈 URL: ${page.url()}`);
 
-    // GoBlogWrite 시도
-    await page.goto("https://blog.naver.com/GoBlogWrite.naver", {
+    // 실제 글쓰기 URL (Redirect=Write 방식)
+    await page.goto(`https://blog.naver.com/${blogId}?Redirect=Write`, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
     await page.waitForTimeout(3000);
-    console.log(`[Naver] GoBlogWrite URL: ${page.url()}`);
+    console.log(`[Naver] 글쓰기 URL: ${page.url()}`);
 
-    // mainFrame이 없으면 blogId 명시 URL로 재시도
+    // mainFrame 없으면 PostWriteForm 폴백
     let mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
     if (!mainFrameVisible) {
-      console.log("[Naver] GoBlogWrite에 mainFrame 없음 → PostWriteForm으로 재시도");
-      await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${naverId}`, {
+      console.log("[Naver] Redirect=Write에 mainFrame 없음 → PostWriteForm 폴백");
+      await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`, {
         waitUntil: "domcontentloaded",
         timeout: 30000,
       });
       await page.waitForTimeout(3000);
       console.log(`[Naver] PostWriteForm URL: ${page.url()}`);
-      const bodySnippet = await page.evaluate(() =>
-        document.body?.innerText?.slice(0, 150) ?? ""
-      ).catch(() => "");
-      console.log(`[Naver] 페이지 내용: ${bodySnippet}`);
       mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
     }
 
     if (!mainFrameVisible) {
+      const bodySnippet = await page.evaluate(() =>
+        document.body?.innerText?.slice(0, 150) ?? ""
+      ).catch(() => "");
       throw new Error(
-        `블로그 글쓰기 페이지 접근 실패 (현재 URL: ${page.url()}). ` +
-        `blog.naver.com/${naverId} 블로그가 존재하는지 확인하세요.`
+        `블로그 글쓰기 페이지 접근 실패 (URL: ${page.url()}).\n내용: ${bodySnippet}`
       );
     }
 
@@ -155,7 +154,7 @@ async function loginWithCookies(
   context: any,
   page: Page,
   cookiesJson: string,
-  naverId: string
+  blogId: string
 ): Promise<void> {
   let cookies: Cookie[];
   try {
@@ -189,7 +188,7 @@ async function loginWithCookies(
     );
   }
 
-  console.log(`[Naver] 쿠키 인증 성공 (blogId: ${naverId})`);
+  console.log(`[Naver] 쿠키 인증 성공 (blogId: ${blogId})`);
 }
 
 async function loginWithCredentials(page: Page, naverId: string, naverPw: string): Promise<void> {

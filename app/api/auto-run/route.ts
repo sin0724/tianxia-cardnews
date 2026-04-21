@@ -62,6 +62,8 @@ export async function POST(req: NextRequest) {
     // ── 6. 네이버 블로그 포스팅 (Playwright 브라우저 자동화) ──
     const naverId = process.env.NAVER_ID;
     const naverPw = process.env.NAVER_PW;
+    // 로그인 ID와 블로그 ID가 다를 수 있음 (NAVER_BLOG_ID 없으면 NAVER_ID 사용)
+    const naverBlogId = process.env.NAVER_BLOG_ID || naverId;
 
     let postUrl = "";
     if (naverId && naverPw) {
@@ -70,6 +72,7 @@ export async function POST(req: NextRequest) {
         postUrl = await postToNaverBlogPlaywright(
           naverId,
           naverPw,
+          naverBlogId ?? naverId,
           blogData.title ?? topic,
           blogData.content ?? "",
           blogData.tags ?? []
