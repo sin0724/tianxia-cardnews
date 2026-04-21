@@ -1,5 +1,12 @@
-import { chromium } from "playwright";
+import { chromium, type Cookie } from "playwright";
 
+/**
+ * 네이버 블로그 자동 포스팅
+ *
+ * 인증 방식 우선순위:
+ *  1. NAVER_COOKIES 환경변수 (쿠키 주입) — 서버 IP 차단 우회, 권장
+ *  2. ID/PW 로그인 — 로컬 환경에서만 동작 (서버에서는 IP 차단됨)
+ */
 export async function postToNaverBlogPlaywright(
   naverId: string,
   naverPw: string,
@@ -7,6 +14,8 @@ export async function postToNaverBlogPlaywright(
   content: string,
   tags: string[]
 ): Promise<string> {
+  const cookiesJson = process.env.NAVER_COOKIES;
+
   const browser = await chromium.launch({
     headless: true,
     executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined,
@@ -15,7 +24,7 @@ export async function postToNaverBlogPlaywright(
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--disable-blink-features=AutomationControlled", // 핵심: 봇 탐지 회피
+      "--disable-blink-features=AutomationControlled",
       "--disable-infobars",
       "--window-size=1280,900",
     ],
@@ -29,7 +38,6 @@ export async function postToNaverBlogPlaywright(
     extraHTTPHeaders: { "Accept-Language": "ko-KR,ko;q=0.9" },
   });
 
-  // navigator.webdriver 숨기기 (자동화 탐지 우회)
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
@@ -40,34 +48,11 @@ export async function postToNaverBlogPlaywright(
   const page = await context.newPage();
 
   try {
-    // ── 1. 네이버 로그인 ──
-    await page.goto(
-      "https://nid.naver.com/nidlogin.login?mode=form&url=https://blog.naver.com",
-      { waitUntil: "domcontentloaded", timeout: 20000 }
-    );
-    await page.waitForTimeout(1000);
-
-    // React 호환 값 설정 (일반 fill이 Naver 폼에서 작동 안 할 때 대비)
-    await fillNaverInput(page, "#id", naverId);
-    await page.waitForTimeout(400);
-    await fillNaverInput(page, "#pw", naverPw);
-    await page.waitForTimeout(400);
-
-    // 로그인 버튼 (id="log.login" 또는 class="btn_login")
-    try {
-      await page.click('[id="log.login"]', { timeout: 3000 });
-    } catch {
-      await page.click(".btn_login", { timeout: 3000 });
-    }
-
-    await page.waitForNavigation({ waitUntil: "networkidle", timeout: 20000 });
-
-    const afterLoginUrl = page.url();
-    if (afterLoginUrl.includes("nidlogin") || afterLoginUrl.includes("login.naver")) {
-      // 디버그용 스크린샷 정보
-      throw new Error(
-        "네이버 로그인 실패 — 서버 IP 차단 또는 보안 로그인 감지. NAVER_COOKIES 방식으로 전환 필요."
-      );
+    // ── 1. 인증 ──
+    if (cookiesJson) {
+      await loginWithCookies(context, page, cookiesJson, naverId);
+    } else {
+      await loginWithCredentials(page, naverId, naverPw);
     }
 
     // ── 2. 블로그 글쓰기 페이지 ──
@@ -76,9 +61,9 @@ export async function postToNaverBlogPlaywright(
       { waitUntil: "networkidle", timeout: 30000 }
     );
 
-    // ── 3. mainFrame iframe 진입 (Python 코드 참고) ──
+    // ── 3. mainFrame iframe 진입 ──
     await page.waitForSelector("#mainFrame", { timeout: 20000 });
-    await page.waitForTimeout(3000); // SmartEditor 초기화 대기
+    await page.waitForTimeout(3000);
 
     const mainFrame =
       page.frame({ name: "mainFrame" }) ??
@@ -88,30 +73,28 @@ export async function postToNaverBlogPlaywright(
       throw new Error("블로그 에디터 iframe(#mainFrame)을 찾을 수 없습니다.");
     }
 
-    // SmartEditor 로드 확인
     await mainFrame.waitForSelector(
       ".se-section-documentTitle, .se-title-text, [contenteditable='true']",
       { timeout: 20000 }
     );
     await page.waitForTimeout(2000);
 
-    // ── 4. 제목 입력 (한 글자씩 0.03초 간격 — Python 방식 동일) ──
+    // ── 4. 제목 입력 ──
     const titleSel = ".se-section-documentTitle [contenteditable='true'], .se-title-text";
     await mainFrame.locator(titleSel).first().click();
     await page.waitForTimeout(300);
     await typeSlowly(page, title);
-
     await page.waitForTimeout(500);
 
     // ── 5. 본문 입력 ──
-    const contentSel = ".se-section-text [contenteditable='true'], .se-text-paragraph [contenteditable='true']";
+    const contentSel =
+      ".se-section-text [contenteditable='true'], .se-text-paragraph [contenteditable='true']";
     await mainFrame.locator(contentSel).first().click();
     await page.waitForTimeout(300);
     await page.keyboard.press("Control+a");
     await page.keyboard.press("Delete");
     await page.waitForTimeout(200);
     await typeSlowly(page, content);
-
     await page.waitForTimeout(1000);
 
     // ── 6. 태그 입력 ──
@@ -133,7 +116,6 @@ export async function postToNaverBlogPlaywright(
     await mainFrame.locator(publishSel).first().click({ timeout: 10000 });
     await page.waitForTimeout(1500);
 
-    // 발행 확인 팝업 처리
     try {
       const confirmSel = "button:has-text('발행'), button:has-text('확인')";
       const confirmBtns = mainFrame.locator(confirmSel);
@@ -148,7 +130,76 @@ export async function postToNaverBlogPlaywright(
   }
 }
 
-/** React 호환 input 값 설정 (Naver 폼은 일반 value= 할당 무시) */
+/** 쿠키 주입 방식 (서버 환경 권장) */
+async function loginWithCookies(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  context: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  page: any,
+  cookiesJson: string,
+  naverId: string
+): Promise<void> {
+  let cookies: Cookie[];
+  try {
+    cookies = JSON.parse(cookiesJson) as Cookie[];
+  } catch {
+    throw new Error("NAVER_COOKIES 환경변수가 올바른 JSON 형식이 아닙니다.");
+  }
+
+  await context.addCookies(cookies);
+
+  // 쿠키 유효성 확인 — 블로그 페이지 접근 시도
+  await page.goto("https://www.naver.com", { waitUntil: "domcontentloaded", timeout: 15000 });
+  await page.waitForTimeout(1000);
+
+  // 로그인 상태 확인
+  const isLoggedIn = await page.evaluate(() => {
+    // 네이버 메인의 로그인 상태 확인 (로그인 버튼이 없으면 로그인된 것)
+    return !document.querySelector(".gnb_login_btn, a[href*='nidlogin']");
+  });
+
+  if (!isLoggedIn) {
+    throw new Error(
+      "NAVER_COOKIES가 만료되었습니다. 로컬에서 'npx tsx scripts/extract-naver-cookies.ts'를 다시 실행해 쿠키를 갱신하세요."
+    );
+  }
+
+  console.log(`[Naver] 쿠키 인증 성공 (blogId: ${naverId})`);
+}
+
+/** ID/PW 로그인 방식 (로컬 전용) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loginWithCredentials(page: any, naverId: string, naverPw: string): Promise<void> {
+  await page.goto(
+    "https://nid.naver.com/nidlogin.login?mode=form&url=https://blog.naver.com",
+    { waitUntil: "domcontentloaded", timeout: 20000 }
+  );
+  await page.waitForTimeout(1000);
+
+  await fillNaverInput(page, "#id", naverId);
+  await page.waitForTimeout(400);
+  await fillNaverInput(page, "#pw", naverPw);
+  await page.waitForTimeout(400);
+
+  try {
+    await page.click('[id="log.login"]', { timeout: 3000 });
+  } catch {
+    await page.click(".btn_login", { timeout: 3000 });
+  }
+
+  await page.waitForNavigation({ waitUntil: "networkidle", timeout: 20000 });
+
+  const afterLoginUrl = page.url();
+  if (afterLoginUrl.includes("nidlogin") || afterLoginUrl.includes("login.naver")) {
+    throw new Error(
+      "네이버 로그인 실패 — 서버 IP 차단 감지.\n" +
+      "해결책: 로컬에서 'npx tsx scripts/extract-naver-cookies.ts' 실행 후\n" +
+      "출력된 JSON을 Railway 환경변수 NAVER_COOKIES에 저장하세요."
+    );
+  }
+}
+
+/** React 호환 input 값 설정 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fillNaverInput(page: any, selector: string, value: string): Promise<void> {
   await page.evaluate(
@@ -164,10 +215,9 @@ async function fillNaverInput(page: any, selector: string, value: string): Promi
   );
 }
 
-/** 한 글자씩 0.03초 간격 입력 (naverpost Python 방식) */
+/** 50자씩 묶어 30ms 간격 입력 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function typeSlowly(page: any, text: string): Promise<void> {
-  // 50자씩 묶어서 type — 너무 긴 텍스트도 처리
   const chunks = text.match(/[\s\S]{1,50}/g) ?? [text];
   for (const chunk of chunks) {
     await page.keyboard.type(chunk, { delay: 30 });
