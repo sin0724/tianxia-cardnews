@@ -1,4 +1,7 @@
 import { chromium, type Cookie, type Page, type Frame } from "playwright";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 /**
  * 네이버 블로그 자동 포스팅 — naverpost 방식 포팅
@@ -8,14 +11,14 @@ import { chromium, type Cookie, type Page, type Frame } from "playwright";
  *  2. ID/PW 로그인 — 로컬 전용
  */
 export async function postToNaverBlogPlaywright(
-  naverId: string,   // 로그인 ID (예: b-567)
+  naverId: string,
   naverPw: string,
-  blogId: string,    // 블로그 ID (예: influencercompany) — 로그인 ID와 다를 수 있음
+  blogId: string,
   title: string,
   content: string,
-  tags: string[]
+  tags: string[],
+  imagePaths?: string[]   // 여러 이미지 경로 (선택)
 ): Promise<string> {
-  // 방어적 타입 처리
   title   = (title   && title   !== "undefined") ? title   : "자동 포스팅";
   content = (content && content !== "undefined") ? content : "";
   tags    = Array.isArray(tags) ? tags : [];
@@ -61,32 +64,25 @@ export async function postToNaverBlogPlaywright(
     }
 
     // ── 2. 글쓰기 페이지 ──
-    // 블로그 홈 먼저 방문해 도메인 세션 확립
     await page.goto(`https://blog.naver.com/${blogId}`, {
       waitUntil: "domcontentloaded",
       timeout: 20000,
     });
     await page.waitForTimeout(1500);
-    console.log(`[Naver] 블로그 홈 URL: ${page.url()}`);
 
-    // 실제 글쓰기 URL (Redirect=Write 방식)
     await page.goto(`https://blog.naver.com/${blogId}?Redirect=Write`, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
     await page.waitForTimeout(3000);
-    console.log(`[Naver] 글쓰기 URL: ${page.url()}`);
 
-    // mainFrame 없으면 PostWriteForm 폴백
     let mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
     if (!mainFrameVisible) {
-      console.log("[Naver] Redirect=Write에 mainFrame 없음 → PostWriteForm 폴백");
       await page.goto(`https://blog.naver.com/PostWriteForm.naver?blogId=${blogId}`, {
         waitUntil: "domcontentloaded",
         timeout: 30000,
       });
       await page.waitForTimeout(3000);
-      console.log(`[Naver] PostWriteForm URL: ${page.url()}`);
       mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
     }
 
@@ -94,14 +90,12 @@ export async function postToNaverBlogPlaywright(
       const bodySnippet = await page.evaluate(() =>
         document.body?.innerText?.slice(0, 150) ?? ""
       ).catch(() => "");
-      throw new Error(
-        `블로그 글쓰기 페이지 접근 실패 (URL: ${page.url()}).\n내용: ${bodySnippet}`
-      );
+      throw new Error(`블로그 글쓰기 페이지 접근 실패 (URL: ${page.url()}).\n내용: ${bodySnippet}`);
     }
 
     // ── 3. mainFrame iframe 진입 ──
     await page.waitForSelector("#mainFrame", { timeout: 30000 });
-    await page.waitForTimeout(3000); // SmartEditor 초기화 대기
+    await page.waitForTimeout(3000);
 
     const mainFrame = getMainFrame(page);
     if (!mainFrame) throw new Error("블로그 에디터 iframe(#mainFrame)을 찾을 수 없습니다.");
@@ -112,7 +106,7 @@ export async function postToNaverBlogPlaywright(
     );
     await page.waitForTimeout(1000);
 
-    // ── 4. 팝업 닫기 (naverpost 방식) ──
+    // ── 4. 팝업 닫기 ──
     await closePopups(mainFrame);
 
     // ── 5. 제목 입력 ──
@@ -121,16 +115,24 @@ export async function postToNaverBlogPlaywright(
     await typeChars(page, title);
     await page.waitForTimeout(500);
 
-    // ── 6. 본문 입력 ──
+    // ── 6. 본문 클릭 후 이미지 → 텍스트 순서로 입력 ──
     await mainFrame.locator(".se-section-text").first().click();
     await page.waitForTimeout(500);
+
+    const validImages = (imagePaths ?? []).filter((p) => fs.existsSync(p));
+    for (const imgPath of validImages) {
+      await uploadImageToEditor(mainFrame, page, imgPath);
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(400);
+    }
+
     await typeContent(page, content);
     await page.waitForTimeout(1000);
 
     // ── 7. 태그 입력 ──
     await inputTags(mainFrame, page, tags);
 
-    // ── 8. 발행 버튼 — JS click (naverpost 방식) ──
+    // ── 8. 발행 버튼 클릭 ──
     const publishBtn = await mainFrame
       .locator(".publish_btn__m9KHH")
       .first()
@@ -141,12 +143,71 @@ export async function postToNaverBlogPlaywright(
     console.log("[Naver] 발행 버튼 클릭 완료");
     await page.waitForTimeout(2500);
 
-    // ── 9. 발행 옵션 처리 (새 창 or 현재 창) ──
+    // ── 9. 발행 옵션 처리 ──
     const postUrl = await handlePublishOptions(page, context);
     return postUrl;
   } finally {
     await browser.close();
   }
+}
+
+// ─────────────────────────────────────────
+// 이미지 업로드 (naverpost upload_image_to_editor 포팅)
+// ─────────────────────────────────────────
+
+async function uploadImageToEditor(mainFrame: Frame, page: Page, imagePath: string): Promise<void> {
+  const absPath = path.resolve(imagePath);
+  console.log(`[Naver] 이미지 업로드: ${path.basename(absPath)}`);
+
+  // 방법 1: iframe 내 숨겨진 file input에 직접 주입 (naverpost 방식 1)
+  try {
+    const fileInputs = await mainFrame.locator("input[type='file']").all();
+    for (const input of fileInputs) {
+      try {
+        await input.setInputFiles(absPath);
+        await page.waitForTimeout(3000);
+        console.log("[Naver] 이미지 업로드 완료 (숨겨진 input)");
+        return;
+      } catch { continue; }
+    }
+  } catch { /* 다음 방법으로 */ }
+
+  // 방법 2: 이미지 툴바 버튼 클릭 후 file input (naverpost 방식 2)
+  const imgBtnSelectors = [
+    "button[data-name='image']",
+    ".se-toolbar-button-image",
+    "button[class*='image']",
+    "button[aria-label*='이미지']",
+  ];
+
+  for (const sel of imgBtnSelectors) {
+    try {
+      const btn = mainFrame.locator(sel).first();
+      if (await btn.isVisible({ timeout: 1500 })) {
+        await mainFrame.evaluate((el) => (el as HTMLElement).click(), await btn.elementHandle());
+        await page.waitForTimeout(1500);
+
+        const fileInput = mainFrame.locator("input[type='file']").first();
+        await fileInput.setInputFiles(absPath);
+        await page.waitForTimeout(3000);
+        console.log(`[Naver] 이미지 업로드 완료 (버튼 클릭: ${sel})`);
+        return;
+      }
+    } catch { continue; }
+  }
+
+  // 방법 3: page 컨텍스트에서 file input 찾기 (iframe 밖에서 나타나는 경우)
+  try {
+    const fileInput = page.locator("input[type='file']").first();
+    if (await fileInput.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await fileInput.setInputFiles(absPath);
+      await page.waitForTimeout(3000);
+      console.log("[Naver] 이미지 업로드 완료 (page 컨텍스트)");
+      return;
+    }
+  } catch { /* ignore */ }
+
+  console.warn("[Naver] 이미지 업로드 실패 — 텍스트만 포스팅 계속");
 }
 
 // ─────────────────────────────────────────
@@ -170,17 +231,10 @@ async function loginWithCookies(
   await context.addCookies(cookies);
   console.log(`[Naver] 쿠키 ${cookies.length}개 주입 완료`);
 
-  // 네이버 메인에서 로그인 상태 확인 (가장 안정적)
-  await page.goto("https://www.naver.com", {
-    waitUntil: "domcontentloaded",
-    timeout: 20000,
-  });
+  await page.goto("https://www.naver.com", { waitUntil: "domcontentloaded", timeout: 20000 });
   await page.waitForTimeout(1500);
 
   const afterUrl = page.url();
-  console.log(`[Naver] 쿠키 확인 URL: ${afterUrl}`);
-
-  // 로그인 페이지로 리다이렉트된 경우만 실패 처리
   const isLoginPage =
     afterUrl.includes("nidlogin") ||
     afterUrl.includes("login.naver") ||
@@ -191,7 +245,6 @@ async function loginWithCookies(
       "NAVER_COOKIES가 만료되었습니다. 로컬에서 'npx tsx scripts/extract-naver-cookies.ts'를 다시 실행해 쿠키를 갱신하세요."
     );
   }
-
   console.log(`[Naver] 쿠키 인증 성공 (blogId: ${blogId})`);
 }
 
@@ -230,7 +283,6 @@ function getMainFrame(page: Page): Frame | undefined {
   );
 }
 
-/** naverpost: 팝업 닫기 (.se-popup-button-cancel, .se-help-panel-close-button) */
 async function closePopups(frame: Frame): Promise<void> {
   for (const sel of [".se-popup-button-cancel", ".se-help-panel-close-button"]) {
     try {
@@ -243,20 +295,16 @@ async function closePopups(frame: Frame): Promise<void> {
   }
 }
 
-/** naverpost: ActionChains 방식 — 한 글자씩 0.03초 간격 */
 async function typeChars(page: Page, text: string): Promise<void> {
   for (const char of text) {
     await page.keyboard.type(char, { delay: 30 });
   }
 }
 
-/** 본문 입력 — 줄바꿈은 Enter 키 (naverpost 방식) */
 async function typeContent(page: Page, text: string): Promise<void> {
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].length > 0) {
-      await typeChars(page, lines[i]);
-    }
+    if (lines[i].length > 0) await typeChars(page, lines[i]);
     if (i < lines.length - 1) {
       await page.keyboard.press("Enter");
       await page.waitForTimeout(30);
@@ -266,8 +314,7 @@ async function typeContent(page: Page, text: string): Promise<void> {
 
 async function inputTags(frame: Frame, page: Page, tags: string[]): Promise<void> {
   try {
-    const tagSel = ".se-tag-input input, input[placeholder*='태그']";
-    const tagEl = frame.locator(tagSel).first();
+    const tagEl = frame.locator(".se-tag-input input, input[placeholder*='태그']").first();
     if (await tagEl.isVisible({ timeout: 2000 }).catch(() => false)) {
       for (const tag of tags.slice(0, 5)) {
         await tagEl.fill(tag);
@@ -278,16 +325,11 @@ async function inputTags(frame: Frame, page: Page, tags: string[]): Promise<void
   } catch { /* 태그란 없으면 건너뜀 */ }
 }
 
-/**
- * 발행 옵션 처리 — naverpost handle_publish_options 포팅
- * 새 창이 열리거나 현재 창에서 팝업이 처리됨
- */
 async function handlePublishOptions(
   page: Page,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any
 ): Promise<string> {
-  // 새 창이 열리는 경우를 대기 (최대 5초)
   let targetPage: Page = page;
   try {
     const newPagePromise = context.waitForEvent("page", { timeout: 5000 }) as Promise<Page>;
@@ -296,24 +338,18 @@ async function handlePublishOptions(
     targetPage = newPage;
     console.log("[Naver] 발행 옵션 새 창 감지");
   } catch {
-    // 새 창 없음 — 현재 페이지에서 처리
     console.log("[Naver] 현재 창에서 발행 옵션 처리");
   }
 
   await targetPage.waitForTimeout(1500);
 
-  // iframe 안에 발행 옵션이 있을 수 있음
   let optionFrame: Page | Frame = targetPage;
   try {
     const iframes = targetPage.frames();
-    if (iframes.length > 1) {
-      // mainFrame 제외한 첫 번째 iframe 사용
-      const candidate = iframes.find((f) => f !== targetPage.mainFrame() && f.url() !== "about:blank");
-      if (candidate) optionFrame = candidate;
-    }
+    const candidate = iframes.find((f) => f !== targetPage.mainFrame() && f.url() !== "about:blank");
+    if (candidate) optionFrame = candidate;
   } catch { /* ignore */ }
 
-  // 현재 발행 라디오 선택 (label[for='radio_time1'])
   try {
     await (optionFrame as Frame).locator("label[for='radio_time1']").first().click({ timeout: 5000 });
     console.log("[Naver] 현재 발행 라디오 선택");
@@ -322,7 +358,6 @@ async function handlePublishOptions(
     console.log("[Naver] 발행 라디오 버튼 없음 — 건너뜀");
   }
 
-  // 최종 발행 버튼 클릭 (naverpost 셀렉터 순서)
   const finalSelectors = [
     "button[data-testid='seOnePublishBtn']",
     ".confirm_btn__WEaBq[data-testid='seOnePublishBtn']",
@@ -347,6 +382,37 @@ async function handlePublishOptions(
   await targetPage.waitForTimeout(2000);
 
   return targetPage.url();
+}
+
+// ─────────────────────────────────────────
+// 이미지 다운로드 (Pexels API)
+// ─────────────────────────────────────────
+
+export async function downloadTopicImage(topic: string, pexelsApiKey: string): Promise<string | null> {
+  try {
+    const query = encodeURIComponent(topic + " taiwan business");
+    const res = await fetch(`https://api.pexels.com/v1/search?query=${query}&per_page=5&orientation=landscape`, {
+      headers: { Authorization: pexelsApiKey },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json() as { photos?: Array<{ src: { landscape: string } }> };
+    const imageUrl = data.photos?.[0]?.src?.landscape;
+    if (!imageUrl) return null;
+
+    const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(15000) });
+    if (!imgRes.ok) return null;
+
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    const tmpPath = path.join(os.tmpdir(), `tianxia-img-${Date.now()}.jpg`);
+    fs.writeFileSync(tmpPath, buffer);
+    console.log(`[Image] 다운로드 완료: ${path.basename(tmpPath)}`);
+    return tmpPath;
+  } catch (e) {
+    console.warn(`[Image] 다운로드 실패: ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────

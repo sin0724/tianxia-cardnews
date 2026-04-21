@@ -1,0 +1,9 @@
+[
+  {
+    "name": "계정1",
+    "naverId": "your_naver_id",
+    "naverPw": "your_naver_password",
+    "blogId": "your_blog_id",
+    "enabled": true
+  }
+]

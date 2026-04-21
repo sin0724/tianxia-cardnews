@@ -125,6 +125,7 @@ export default function HomePage() {
   // 자동화 패널
   const [autoOpen, setAutoOpen] = useState(false);
   const [instantPosting, setInstantPosting] = useState(false);
+  const [postingStep, setPostingStep] = useState("");
   const [instantResult, setInstantResult] = useState<{
     topic?: string; blogTitle?: string; postUrl?: string; log?: string[]; error?: string;
   } | null>(null);
@@ -174,20 +175,117 @@ export default function HomePage() {
     } catch { /* ignore */ }
   }
 
-  async function handleInstantPost() {
+  /** 현재 생성된 카드뉴스로 포스팅 */
+  async function handlePostCurrent() {
+    if (!content) return;
     setInstantPosting(true);
     setInstantResult(null);
     try {
-      const res = await fetch("/api/auto-run", {
+      // 1. 카드 이미지 캡처
+      setPostingStep("카드 이미지 캡처 중...");
+      const images: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const el = captureRefs.current[i];
+        if (!el) continue;
+        const canvas = await html2canvas(el, {
+          scale: 1, useCORS: true, allowTaint: true, backgroundColor: null,
+          width: CARD_W, height: CARD_H,
+        });
+        images.push(canvas.toDataURL("image/png", 0.9));
+      }
+
+      // 2. 블로그 원고 생성 (이미 생성돼 있으면 재사용)
+      let blog = blogResult;
+      if (!blog) {
+        setPostingStep("블로그 원고 생성 중...");
+        const res = await fetch("/api/blog/generate", {
+          method: "POST",
+          headers: { ...apiHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ topic, cardContent: content }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "블로그 생성 실패");
+        setBlogResult(data);
+        blog = data;
+      }
+
+      // 3. 네이버 포스팅
+      setPostingStep("네이버 블로그 포스팅 중... (1~2분 소요)");
+      const postRes = await fetch("/api/naver/post-now", {
         method: "POST",
-        headers: apiHeaders(),
+        headers: { ...apiHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: blog!.title,
+          content: blog!.content,
+          tags: blog!.tags,
+          images,
+        }),
       });
-      const data = await res.json();
-      setInstantResult(data);
+      const postData = await postRes.json();
+      if (!postRes.ok) throw new Error(postData.error ?? "포스팅 실패");
+
+      setInstantResult({ blogTitle: blog!.title, postUrl: postData.postUrl });
     } catch (e) {
       setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
     } finally {
       setInstantPosting(false);
+      setPostingStep("");
+    }
+  }
+
+  /** 새 주제로 처음부터 자동 생성 후 포스팅 */
+  async function handleInstantPost() {
+    setInstantPosting(true);
+    setInstantResult(null);
+    try {
+      // 1. 트렌드 → 카드뉴스 → 블로그 원고 생성
+      setPostingStep("트렌드 수집 및 콘텐츠 생성 중...");
+      const autoRes = await fetch("/api/auto-run", {
+        method: "POST",
+        headers: apiHeaders(),
+      });
+      const autoData = await autoRes.json();
+      if (!autoRes.ok || !autoData.success) throw new Error(autoData.error ?? "콘텐츠 생성 실패");
+
+      // 2. 생성된 카드뉴스를 UI에 반영하고 캡처
+      setContent(autoData.cardContent);
+      setCaption(autoData.cardContent?.caption ?? "");
+      setTopic(autoData.topic ?? "");
+      await new Promise((r) => setTimeout(r, 800)); // 렌더링 대기
+
+      setPostingStep("카드 이미지 캡처 중...");
+      const images: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const el = captureRefs.current[i];
+        if (!el) continue;
+        const canvas = await html2canvas(el, {
+          scale: 1, useCORS: true, allowTaint: true, backgroundColor: null,
+          width: CARD_W, height: CARD_H,
+        });
+        images.push(canvas.toDataURL("image/png", 0.9));
+      }
+
+      // 3. 네이버 포스팅
+      setPostingStep("네이버 블로그 포스팅 중... (1~2분 소요)");
+      const postRes = await fetch("/api/naver/post-now", {
+        method: "POST",
+        headers: { ...apiHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: autoData.blogTitle,
+          content: autoData.blogContent,
+          tags: autoData.tags ?? [],
+          images,
+        }),
+      });
+      const postData = await postRes.json();
+      if (!postRes.ok) throw new Error(postData.error ?? "포스팅 실패");
+
+      setInstantResult({ topic: autoData.topic, blogTitle: autoData.blogTitle, postUrl: postData.postUrl });
+    } catch (e) {
+      setInstantResult({ error: e instanceof Error ? e.message : "알 수 없는 오류" });
+    } finally {
+      setInstantPosting(false);
+      setPostingStep("");
     }
   }
 
@@ -1377,77 +1475,86 @@ export default function HomePage() {
             </div>
 
             <div className="p-6 space-y-6">
-              {/* ── 즉시 포스팅 ── */}
+              {/* ── 현재 카드뉴스로 포스팅 ── */}
+              {content && (
+                <section className="space-y-3">
+                  <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
+                    <span className="w-5 h-5 bg-[#DC2626] text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                    현재 카드뉴스로 포스팅
+                  </h4>
+                  <p className="text-xs text-gray-400">생성된 카드뉴스 5장을 이미지로 캡처해 블로그 원고와 함께 네이버에 포스팅합니다.</p>
+                  <button
+                    onClick={handlePostCurrent}
+                    disabled={instantPosting}
+                    className="w-full bg-[#DC2626] text-white py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {instantPosting ? (
+                      <><Spinner /> {postingStep || "포스팅 진행 중..."}</>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        현재 카드뉴스로 포스팅
+                      </>
+                    )}
+                  </button>
+                </section>
+              )}
+
+              {/* ── 새로 생성 후 포스팅 ── */}
               <section className="space-y-3">
                 <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
-                  <span className="w-5 h-5 bg-[#DC2626] text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                  지금 바로 포스팅
+                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">{content ? "2" : "1"}</span>
+                  새로 생성 후 포스팅
                 </h4>
-                <p className="text-xs text-gray-400">대만 뉴스 트렌드에서 주제를 골라 카드뉴스 + 블로그를 즉시 생성하고 네이버에 포스팅합니다.</p>
+                <p className="text-xs text-gray-400">대만 뉴스 트렌드에서 주제를 골라 카드뉴스 + 블로그를 새로 만들고 포스팅합니다.</p>
 
                 <button
                   onClick={handleInstantPost}
                   disabled={instantPosting}
-                  className="w-full bg-[#DC2626] text-white py-3 rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-[#1A1A1A] text-white py-3 rounded-xl text-sm font-bold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                   {instantPosting ? (
-                    <><Spinner /> 포스팅 진행 중... (1~2분 소요)</>
+                    <><Spinner /> {postingStep || "진행 중..."}</>
                   ) : (
                     <>
                       <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      지금 바로 포스팅
+                      새로 생성 후 포스팅
                     </>
                   )}
                 </button>
-
-                {instantPosting && (
-                  <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                    <p className="text-xs font-semibold text-gray-600">진행 중...</p>
-                    {["트렌드 수집", "주제 선택", "카드뉴스 생성", "블로그 원고 작성", "네이버 포스팅"].map((step, i) => (
-                      <div key={i} className="flex items-center gap-2 text-xs text-gray-500">
-                        <Spinner size={10} />
-                        <span>{step}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {instantResult && (
-                  <div className={`rounded-xl p-4 space-y-2 ${instantResult.error ? "bg-red-50 border border-red-100" : "bg-green-50 border border-green-100"}`}>
-                    {instantResult.error ? (
-                      <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
-                    ) : (
-                      <>
-                        <p className="text-xs font-bold text-green-700">✅ 포스팅 완료!</p>
-                        <div className="space-y-1">
-                          <p className="text-xs text-gray-700"><span className="font-semibold">주제:</span> {instantResult.topic}</p>
-                          <p className="text-xs text-gray-700"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
-                          {instantResult.postUrl && (
-                            <a href={instantResult.postUrl} target="_blank" rel="noopener noreferrer"
-                              className="text-xs text-blue-600 underline break-all">{instantResult.postUrl}</a>
-                          )}
-                        </div>
-                        {instantResult.log && instantResult.log.length > 0 && (
-                          <div className="mt-2 space-y-0.5">
-                            {instantResult.log.map((l, i) => (
-                              <p key={i} className="text-[10px] text-gray-500">{l}</p>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
               </section>
+
+              {/* 결과 */}
+              {instantResult && (
+                <div className={`rounded-xl p-4 space-y-2 ${instantResult.error ? "bg-red-50 border border-red-100" : "bg-green-50 border border-green-100"}`}>
+                  {instantResult.error ? (
+                    <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-bold text-green-700">✅ 포스팅 완료!</p>
+                      <div className="space-y-1">
+                        {instantResult.topic && <p className="text-xs text-gray-700"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
+                        <p className="text-xs text-gray-700"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
+                        {instantResult.postUrl && (
+                          <a href={instantResult.postUrl} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-blue-600 underline break-all">{instantResult.postUrl}</a>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               <div className="h-px bg-gray-100" />
 
               {/* ── 예약 포스팅 ── */}
               <section className="space-y-4">
                 <h4 className="text-sm font-bold text-[#1A1A1A] flex items-center gap-2">
-                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                  <span className="w-5 h-5 bg-[#1A1A1A] text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
                   예약 포스팅
                 </h4>
 

@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
 
-const HISTORY_FILE = path.join("/tmp", "tianxia-used-topics.json");
+const DATA_DIR = path.join(process.cwd(), "data");
+const HISTORY_FILE = path.join(DATA_DIR, "used-topics.json");
 const MAX_HISTORY = 90;
 
 export function loadUsedTopics(): string[] {
@@ -15,6 +16,7 @@ export function loadUsedTopics(): string[] {
 
 export function saveUsedTopics(topics: string[]): void {
   try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(HISTORY_FILE, JSON.stringify(topics.slice(-MAX_HISTORY)));
   } catch {
     // ignore write failures in read-only environments
