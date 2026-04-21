@@ -79,7 +79,19 @@ export async function POST(req: NextRequest) {
         );
         log.push(`포스팅 완료: ${postUrl}`);
       } catch (naverErr) {
-        log.push(`⚠️ 네이버 포스팅 실패 (원고는 생성됨): ${naverErr instanceof Error ? naverErr.message : String(naverErr)}`);
+        const errMsg = naverErr instanceof Error ? naverErr.message : String(naverErr);
+        log.push(`⚠️ 서버 포스팅 실패 — 로컬 포스터 대기열에 저장: ${errMsg.slice(0, 80)}`);
+        // 로컬 PC 포스터가 처리할 수 있도록 pending-post에 저장
+        await fetch(`${base}/api/pending-post`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            title: blogData.title ?? topic,
+            content: blogData.content ?? "",
+            tags: blogData.tags ?? [],
+            topic,
+          }),
+        }).catch(() => null);
       }
     } else {
       log.push("⚠️ NAVER_ID / NAVER_PW 환경변수 미설정 — 포스팅 건너뜀");
