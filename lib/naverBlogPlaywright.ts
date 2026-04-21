@@ -148,23 +148,23 @@ async function loginWithCookies(
 
   await context.addCookies(cookies);
 
-  // 쿠키 유효성 확인 — 블로그 페이지 접근 시도
-  await page.goto("https://www.naver.com", { waitUntil: "domcontentloaded", timeout: 15000 });
-  await page.waitForTimeout(1000);
+  // 블로그 글쓰기 페이지로 직접 진입해서 쿠키 유효성 확인
+  await page.goto(
+    `https://blog.naver.com/PostWriteForm.naver?blogId=${naverId}`,
+    { waitUntil: "domcontentloaded", timeout: 20000 }
+  );
+  await page.waitForTimeout(2000);
 
-  // 로그인 상태 확인
-  const isLoggedIn = await page.evaluate(() => {
-    // 네이버 메인의 로그인 상태 확인 (로그인 버튼이 없으면 로그인된 것)
-    return !document.querySelector(".gnb_login_btn, a[href*='nidlogin']");
-  });
-
-  if (!isLoggedIn) {
+  const currentUrl = page.url();
+  if (currentUrl.includes("nidlogin") || currentUrl.includes("login.naver")) {
     throw new Error(
       "NAVER_COOKIES가 만료되었습니다. 로컬에서 'npx tsx scripts/extract-naver-cookies.ts'를 다시 실행해 쿠키를 갱신하세요."
     );
   }
 
   console.log(`[Naver] 쿠키 인증 성공 (blogId: ${naverId})`);
+  // 이미 글쓰기 페이지에 있으므로 이후 goto는 건너뜀 — 플래그로 처리
+  return;
 }
 
 /** ID/PW 로그인 방식 (로컬 전용) */
