@@ -63,6 +63,8 @@ export async function postToNaverBlogPlaywright(
     });
     await page.waitForTimeout(2000);
 
+    console.log(`[Naver] GoBlogWrite URL: ${page.url()}`);
+
     // mainFrame이 없으면 blogId 명시 URL로 재시도
     let mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
     if (!mainFrameVisible) {
@@ -72,6 +74,16 @@ export async function postToNaverBlogPlaywright(
         timeout: 30000,
       });
       await page.waitForTimeout(2000);
+      console.log(`[Naver] PostWriteForm URL: ${page.url()}`);
+
+      // 페이지 타이틀과 body 첫 100자 로그
+      const title = await page.title().catch(() => "?");
+      const bodySnippet = await page.evaluate(() =>
+        document.body?.innerText?.slice(0, 200) ?? ""
+      ).catch(() => "");
+      console.log(`[Naver] 페이지 타이틀: ${title}`);
+      console.log(`[Naver] 페이지 내용: ${bodySnippet}`);
+
       mainFrameVisible = await page.locator("#mainFrame").isVisible().catch(() => false);
     }
 
