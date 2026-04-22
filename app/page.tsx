@@ -303,7 +303,7 @@ export default function HomePage() {
         headers: apiHeaders(),
       });
       const autoData = await autoRes.json();
-      if (!autoRes.ok || !autoData.success) throw new Error(autoData.error ?? "콘텐츠 생성 실패");
+      if (!autoRes.ok || !autoData.success) throw new Error(autoData.error ?? `콘텐츠 생성 실패 (status:${autoRes.status}, log:${JSON.stringify(autoData.log ?? autoData)})`);
 
       setContent(autoData.cardContent);
       setCaption(autoData.cardContent?.caption ?? "");
