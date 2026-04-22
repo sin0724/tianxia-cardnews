@@ -113,14 +113,43 @@ export async function postToNaverCafe(
       await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     }
 
-    // React SPA 렌더링 완료 대기
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => null);
-    await page.waitForTimeout(4000);
-
-    // 디버그: 스크린샷 + 로그
+    // 클릭 직후 스크린샷 (무슨 화면인지 확인)
+    await page.waitForTimeout(2000);
     const os = require("os") as typeof import("os");
     const debugPath = require("path").join(os.tmpdir(), "cafe-debug.png");
     await page.screenshot({ path: debugPath, fullPage: true });
+    console.log(`[Cafe] 클릭 직후 스크린샷 저장: ${debugPath}`);
+
+    // 글 유형 선택 팝업이 뜬 경우 "일반글" 클릭
+    const typeSelectors = [
+      "li:has-text('일반글')",
+      "button:has-text('일반글')",
+      "a:has-text('일반글')",
+      "li:has-text('텍스트')",
+      "button:has-text('텍스트')",
+      "[class*='write_type'] li:first-child",
+      "[class*='WriteType'] li:first-child",
+      "[class*='post_type'] li:first-child",
+    ];
+    for (const sel of typeSelectors) {
+      try {
+        const el = page.locator(sel).first();
+        if (await el.isVisible({ timeout: 2000 })) {
+          await el.click();
+          console.log(`[Cafe] 글 유형 선택: ${sel}`);
+          break;
+        }
+      } catch { continue; }
+    }
+
+    // React SPA 렌더링 완료 대기
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => null);
+    await page.waitForTimeout(3000);
+
+    // write 페이지 이동 후 스크린샷
+    const debugPath2 = require("path").join(os.tmpdir(), "cafe-debug2.png");
+    await page.screenshot({ path: debugPath2, fullPage: true });
+    console.log(`[Cafe] write 이후 스크린샷: ${debugPath2}`);
     const currentUrl = page.url();
     const allFrames = page.frames().map((f) => f.url().slice(0, 80));
     const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 300) ?? "").catch(() => "");
