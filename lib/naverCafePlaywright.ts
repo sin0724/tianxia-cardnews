@@ -155,112 +155,53 @@ export async function postToNaverCafe(
 type FrameOrPage = Page | Frame;
 
 async function getEditorFrame(page: Page): Promise<FrameOrPage> {
-  // networkidle 대기 (SPA 렌더링 완료)
-  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => null);
-  await page.waitForTimeout(2000);
+  // 글쓰기 버튼 클릭 후 about:blank 에디터 iframe이 실제 URL로 바뀌길 대기
+  console.log("[Cafe] 에디터 iframe 로드 대기 중...");
 
-  // ① #cafe_main iframe (네이버 카페 메인 구조)
-  try {
-    await page.waitForSelector("#cafe_main", { timeout: 8000 });
-    const cafeMainEl = await page.$("#cafe_main");
-    if (cafeMainEl) {
-      const cafeFrame = await cafeMainEl.contentFrame();
-      if (cafeFrame) {
-        console.log("[Cafe] #cafe_main iframe 진입");
-        // iframe 내부 로드 대기
-        await cafeFrame.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => null);
-        await page.waitForTimeout(2000);
+  // 최대 20초간 폴링 — about:blank 아닌 새 iframe 탐색
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(1000);
+    const frames = page.frames();
+    for (const frame of frames) {
+      if (frame === page.mainFrame()) continue;
+      const url = frame.url();
+      if (!url || url === "about:blank") continue;
 
-        // Smart Editor One (신형)
-        const hasSE1 = await cafeFrame.$(".se-section-documentTitle, .se-placeholder").catch(() => null);
-        if (hasSE1) {
-          console.log("[Cafe] Smart Editor One 감지");
-          return cafeFrame;
-        }
+      // GNB 패딩 iframe 제외
+      try {
+        const el = await frame.frameElement();
+        const box = await el.boundingBox();
+        if (box && box.width === 0 && box.height === 0) continue;
+      } catch { /* ignore */ }
 
-        // 구형 폼 에디터 (#subject)
-        const hasSubject = await cafeFrame.$("#subject, input[name='subject']").catch(() => null);
-        if (hasSubject) {
-          console.log("[Cafe] 구형 폼 에디터 감지 (#subject)");
-          return cafeFrame;
-        }
-
-        // contenteditable 에디터
-        const hasEditable = await cafeFrame.$("[contenteditable='true']").catch(() => null);
-        if (hasEditable) {
-          console.log("[Cafe] contenteditable 에디터 감지");
-          return cafeFrame;
-        }
-
-        // 에디터를 못 찾아도 #cafe_main 프레임 반환 (추가 대기 후 사용)
-        console.log("[Cafe] #cafe_main 내 에디터 직접 미확인 — 프레임 반환");
-        return cafeFrame;
+      // 에디터 요소 확인
+      await frame.waitForLoadState("domcontentloaded", { timeout: 3000 }).catch(() => null);
+      const hasEditor = await frame.$(
+        ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true'], textarea"
+      ).catch(() => null);
+      if (hasEditor) {
+        console.log(`[Cafe] 에디터 iframe 발견: ${url.slice(0, 80)}`);
+        return frame;
       }
     }
-  } catch {
-    console.log("[Cafe] #cafe_main 없음 — 다른 방법 시도");
-  }
 
-  // ② 다른 iframe들 순회 (GNB 더미 제외)
-  const frames = page.frames();
-  console.log(`[Cafe] 프레임 목록: ${frames.map((f) => f.url().slice(0, 60)).join(" | ")}`);
-  for (const frame of frames) {
-    if (frame === page.mainFrame()) continue;
-    // 0×0 GNB 패딩 iframe 제외
-    const frameEl = await frame.frameElement().catch(() => null);
-    if (frameEl) {
-      const box = await frameEl.boundingBox().catch(() => null);
-      if (box && box.width === 0 && box.height === 0) continue;
-    }
-    const hasEditor = await frame.$(
-      ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true']"
+    // page 직접 렌더링 (SPA 인라인 write form)
+    const directEditor = await page.$(
+      ".se-section-documentTitle, #subject, input[name='subject']"
     ).catch(() => null);
-    if (hasEditor) {
-      console.log(`[Cafe] 에디터 프레임 발견: ${frame.url().slice(0, 80)}`);
-      return frame;
+    if (directEditor) {
+      console.log("[Cafe] 직접 에디터 감지 (SPA 인라인)");
+      return page;
     }
   }
 
-  // ③ page 직접 (iframe 없는 SPA 구조)
-  const hasDirectEditor = await page.$(
-    ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true']"
-  ).catch(() => null);
-  if (hasDirectEditor) {
-    console.log("[Cafe] 직접 에디터 감지 (iframe 없음)");
-    return page;
-  }
+  // 최후 수단: 로드된 iframe 중 가장 큰 것 반환
+  const allFrames = page.frames().filter((f) => f !== page.mainFrame() && f.url() !== "about:blank");
+  console.log(`[Cafe] 남은 iframe: ${allFrames.map((f) => f.url().slice(0, 60)).join(" | ")}`);
+  if (allFrames.length > 0) return allFrames[0];
 
-  // ④ 최후 수단: 더 오래 기다리고 더 많은 셀렉터 시도
-  console.log("[Cafe] 에디터 장시간 대기 중 (30초)...");
-  const broadSelectors = [
-    "#cafe_main",
-    ".se-section-documentTitle",
-    "#subject",
-    "input[name='subject']",
-    "[contenteditable='true']",
-    "input[placeholder*='제목']",
-    "textarea[placeholder*='내용']",
-    ".write_editor",
-    ".editor_wrap",
-    "iframe",
-  ];
-  await page.waitForSelector(broadSelectors.join(", "), { timeout: 30000 });
-
-  // #cafe_main 재시도
-  const retryEl = await page.$("#cafe_main");
-  if (retryEl) {
-    const retryFrame = await retryEl.contentFrame();
-    if (retryFrame) return retryFrame;
-  }
-
-  // iframe이 1개라도 있으면 진입
-  const iframes = page.frames().filter((f) => f !== page.mainFrame());
-  for (const f of iframes) {
-    const hasEl = await f.$(".se-section-documentTitle, #subject, [contenteditable='true']").catch(() => null);
-    if (hasEl) return f;
-  }
-
-  return page;
+  throw new Error("[Cafe] 에디터 iframe을 찾을 수 없습니다. 글쓰기 버튼 클릭 후 write form이 로드되지 않았습니다.");
 }
 
 // ─────────────────────────────────────────
