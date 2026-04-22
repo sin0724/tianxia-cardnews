@@ -122,49 +122,32 @@ type FrameOrPage = Page | Frame;
 async function getEditorFrame(page: Page): Promise<FrameOrPage> {
   console.log("[Cafe] 에디터 탐색 중...");
 
-  // 최대 25초간 폴링
-  const deadline = Date.now() + 25000;
+  // 최대 20초간 폴링 — textarea.textarea_input (카페 신 에디터 제목 필드)
+  const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1200);
 
-    // ① page 직접 (SPA 인라인 write form)
-    const directEditor = await page.$(
-      ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true']:not([class*='gnb'])"
-    ).catch(() => null);
-    if (directEditor) {
-      console.log("[Cafe] 직접 에디터 감지 (SPA 인라인)");
-      return page;
+    const titleEl = await page.$("textarea.textarea_input").catch(() => null);
+    if (titleEl) {
+      const visible = await titleEl.isVisible().catch(() => false);
+      if (visible) {
+        console.log("[Cafe] 에디터 로드 확인 (textarea.textarea_input)");
+        return page;
+      }
     }
 
-    // ② 모든 iframe 탐색 (about:blank 포함 — srcdoc 방식 대응)
-    const frames = page.frames();
-    for (const frame of frames) {
-      if (frame === page.mainFrame()) continue;
-
-      // 0×0 GNB 패딩 제외
-      try {
-        const el = await frame.frameElement();
-        const box = await el.boundingBox();
-        if (box && box.width === 0 && box.height === 0) continue;
-      } catch { /* ignore */ }
-
-      const hasEditor = await frame.$(
-        ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true'], textarea"
-      ).catch(() => null);
-      if (hasEditor) {
-        console.log(`[Cafe] 에디터 iframe 발견: ${frame.url().slice(0, 80)}`);
-        return frame;
-      }
+    // 구형 폼: #subject
+    const subjectEl = await page.$("#subject, input[name='subject']").catch(() => null);
+    if (subjectEl) {
+      console.log("[Cafe] 구형 에디터 감지 (#subject)");
+      return page;
     }
   }
 
-  // 디버그용 스냅샷
   const os = require("os") as typeof import("os");
   const snap = require("path").join(os.tmpdir(), "cafe-debug-fail.png");
   await page.screenshot({ path: snap, fullPage: true }).catch(() => null);
-  const frameList = page.frames().map((f) => `${f.url().slice(0, 60)}`).join(" | ");
   console.log(`[Cafe] 실패 스크린샷: ${snap}`);
-  console.log(`[Cafe] 최종 프레임: ${frameList}`);
 
   throw new Error("[Cafe] 에디터를 찾을 수 없습니다.");
 }
@@ -196,33 +179,25 @@ async function closePopups(frame: FrameOrPage, page: Page): Promise<void> {
 // ─────────────────────────────────────────
 
 async function inputTitle(frame: FrameOrPage, page: Page, title: string): Promise<void> {
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(800);
 
-  // Smart Editor One 제목
-  const titleSelectors = [
-    ".se-section-documentTitle",
-    ".se-documentTitle-placeholder",
-  ];
-  for (const sel of titleSelectors) {
-    try {
-      const el = (frame as Frame).locator(sel).first();
-      if (await el.isVisible({ timeout: 3000 })) {
-        await el.click();
-        await page.waitForTimeout(300);
-        await typeChars(page, title);
-        console.log(`[Cafe] SE1 제목 입력: ${sel}`);
-        return;
-      }
-    } catch { /* 다음 */ }
-  }
+  // 카페 신 에디터 — textarea.textarea_input
+  try {
+    const el = page.locator("textarea.textarea_input").first();
+    if (await el.isVisible({ timeout: 3000 })) {
+      await el.click();
+      await page.waitForTimeout(200);
+      await el.fill(title);
+      console.log("[Cafe] 제목 입력 완료 (textarea.textarea_input)");
+      return;
+    }
+  } catch { /* 다음 */ }
 
   // 구형 input 제목
   const inputSelectors = [
     "#subject",
     "input[name='subject']",
     "input[placeholder*='제목']",
-    "input[class*='title']",
-    "input[class*='subject']",
   ];
   for (const sel of inputSelectors) {
     try {
@@ -235,7 +210,7 @@ async function inputTitle(frame: FrameOrPage, page: Page, title: string): Promis
     } catch { /* 다음 */ }
   }
 
-  throw new Error("[Cafe] 제목 입력 필드를 찾을 수 없습니다. 카페 에디터 구조를 확인하세요.");
+  throw new Error("[Cafe] 제목 입력 필드를 찾을 수 없습니다.");
 }
 
 // ─────────────────────────────────────────
@@ -248,33 +223,28 @@ async function inputBody(
   content: string,
   validImages: string[]
 ): Promise<void> {
-  // Smart Editor One 본문
-  try {
-    const seText = (frame as Frame).locator(".se-section-text").first();
-    if (await seText.isVisible({ timeout: 3000 })) {
-      await seText.click();
-      await page.waitForTimeout(300);
-      if (validImages.length === 0) {
-        await typeContent(page, content);
-      } else {
-        await typeWithImages(frame, page, content, validImages);
+  // 카페 신 에디터 — .se-component-content 또는 .se-placeholder 클릭 후 타이핑
+  const seBodySelectors = [
+    ".se-component-content",
+    ".se-section-text",
+    ".se-placeholder",
+  ];
+  for (const sel of seBodySelectors) {
+    try {
+      const el = page.locator(sel).first();
+      if (await el.isVisible({ timeout: 3000 })) {
+        await el.click();
+        await page.waitForTimeout(400);
+        if (validImages.length === 0) {
+          await typeContent(page, content);
+        } else {
+          await typeWithImages(frame, page, content, validImages);
+        }
+        console.log(`[Cafe] 본문 입력 완료 (${sel})`);
+        return;
       }
-      console.log("[Cafe] SE1 본문 입력 완료");
-      return;
-    }
-  } catch { /* 다음 */ }
-
-  // Smart Editor 구형 iframe 내 에디터
-  try {
-    const seFrame = (frame as Frame).frameLocator("iframe[id*='SE2'], iframe[name*='se2']").first();
-    const seBody = seFrame.locator("body");
-    if (await seBody.isVisible({ timeout: 2000 })) {
-      await seBody.click();
-      await typeContent(page, content);
-      console.log("[Cafe] Smart Editor 2 본문 입력 완료");
-      return;
-    }
-  } catch { /* 다음 */ }
+    } catch { /* 다음 */ }
+  }
 
   // 구형 textarea
   const textareaSelectors = [
@@ -294,17 +264,6 @@ async function inputBody(
       }
     } catch { /* 다음 */ }
   }
-
-  // contenteditable fallback
-  try {
-    const editable = (frame as Frame).locator("[contenteditable='true']").last();
-    if (await editable.isVisible({ timeout: 2000 })) {
-      await editable.click();
-      await typeContent(page, content);
-      console.log("[Cafe] contenteditable 본문 입력");
-      return;
-    }
-  } catch { /* ignore */ }
 
   console.warn("[Cafe] 본문 입력 필드를 찾지 못했습니다 — 등록 시도 계속");
 }
@@ -424,7 +383,7 @@ async function submitPost(
     "button[type='submit']",
     "#btn_upload",
     "a.btn_write",
-    "button:has-text('등록')",
+    "button:text-is('등록')",
     "input[value='등록']",
   ];
   for (const sel of registerInFrame) {
@@ -439,11 +398,14 @@ async function submitPost(
     } catch { continue; }
   }
 
-  // page 레벨 등록 버튼
+  // page 레벨 등록 버튼 (카페 신 에디터 포함) — "임시등록"과 구분
   const registerInPage = [
-    "button:has-text('등록')",
+    "a.BaseButton--skinGreen",       // 카페 신 에디터 등록 버튼
+    ".publish_btn",
+    "button[class*='publish']",
+    "button:text-is('등록')",
     "input[value='등록']",
-    "a:has-text('등록')",
+    "a:text-is('등록')",
     "button[type='submit']",
   ];
   for (const sel of registerInPage) {
@@ -466,9 +428,9 @@ async function handleAfterSubmit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any
 ): Promise<string> {
-  // Smart Editor One 발행 확인 팝업
+  // Smart Editor One 발행 확인 팝업 (새 창)
   try {
-    const newPagePromise = context.waitForEvent("page", { timeout: 4000 }) as Promise<Page>;
+    const newPagePromise = context.waitForEvent("page", { timeout: 3000 }) as Promise<Page>;
     const newPage = await newPagePromise;
     await newPage.waitForLoadState("domcontentloaded");
     for (const sel of ["button[data-testid='seOnePublishBtn']", "button:has-text('발행')", "button:has-text('등록')"]) {
@@ -476,18 +438,28 @@ async function handleAfterSubmit(
         const btn = newPage.locator(sel).first();
         if (await btn.isVisible({ timeout: 3000 })) {
           await btn.click();
-          await newPage.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => null);
-          await newPage.waitForTimeout(2000);
-          return newPage.url();
+          break;
         }
       } catch { continue; }
     }
+    await newPage.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => null);
+    await newPage.waitForTimeout(2000);
     return newPage.url();
   } catch { /* 새 창 없음 */ }
 
-  await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => null);
-  await page.waitForTimeout(2000);
+  // URL 이 write 페이지에서 벗어날 때까지 최대 10초 대기
+  const writePattern = /\/articles\/write/;
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(1000);
+    const u = page.url();
+    if (!writePattern.test(u) && u.includes("cafe.naver.com")) {
+      console.log(`[Cafe] 발행 후 이동: ${u}`);
+      return u;
+    }
+  }
 
+  await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => null);
   const finalUrl = page.url();
   if (finalUrl.includes("cafe.naver.com")) return finalUrl;
   return `https://cafe.naver.com/${CAFE_URL_ID}`;
