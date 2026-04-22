@@ -79,77 +79,43 @@ export async function postToNaverCafe(
       throw new Error("카페 접근 실패 — 로그인이 필요합니다. 쿠키를 갱신하세요.");
     }
 
-    // 글쓰기 버튼 대기 후 클릭
-    const writeBtnSelectors = [
-      "a:has-text('글쓰기')",
-      "button:has-text('글쓰기')",
-      ".write_btn",
-      "a.btn_write",
-      "[class*='WriteButton']",
-      "[class*='write_btn']",
-      "a[href*='write']",
-    ];
+    // 클릭할 "글쓰기" 링크의 href 수집 (디버그)
+    const writeLinks = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll("a")).
+        filter((a) => a.textContent?.trim() === "글쓰기").
+        map((a) => ({ href: a.href, cls: a.className, outerHTML: a.outerHTML.slice(0, 120) }));
+    });
+    console.log(`[Cafe] 글쓰기 링크 목록: ${JSON.stringify(writeLinks)}`);
+
+    // write 관련 href를 가진 링크 우선 클릭
     let writeClicked = false;
-    for (const sel of writeBtnSelectors) {
-      try {
-        await page.waitForSelector(sel, { timeout: 4000 });
-        const btns = await page.locator(sel).all();
-        for (const btn of btns) {
-          if (await btn.isVisible()) {
-            await btn.click();
-            console.log(`[Cafe] 글쓰기 버튼 클릭: ${sel}`);
-            writeClicked = true;
-            break;
-          }
-        }
-        if (writeClicked) break;
-      } catch { continue; }
+    const writeHref = writeLinks.find((l) =>
+      l.href.includes("write") || l.href.includes("ArticleWrite")
+    );
+    if (writeHref) {
+      console.log(`[Cafe] write href로 이동: ${writeHref.href}`);
+      await page.goto(writeHref.href, { waitUntil: "domcontentloaded", timeout: 30000 });
+      writeClicked = true;
     }
 
     if (!writeClicked) {
-      // 글쓰기 버튼 못 찾으면 SPA write URL 직접 이동
+      // href가 없으면 SPA write URL 직접 이동
       const writeUrl = `https://cafe.naver.com/f-e/cafes/${CAFE_CLUB_ID}/write?menuId=${board.menuId}&boardType=L`;
-      console.log(`[Cafe] 글쓰기 버튼 없음 — 직접 이동: ${writeUrl}`);
+      console.log(`[Cafe] 직접 write URL 이동: ${writeUrl}`);
       await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     }
 
-    // 클릭 직후 스크린샷 (무슨 화면인지 확인)
-    await page.waitForTimeout(2000);
+    // React SPA 렌더링 대기
+    await page.waitForTimeout(5000);
+
     const os = require("os") as typeof import("os");
     const debugPath = require("path").join(os.tmpdir(), "cafe-debug.png");
     await page.screenshot({ path: debugPath, fullPage: true });
-    console.log(`[Cafe] 클릭 직후 스크린샷 저장: ${debugPath}`);
-
-    // 글 유형 선택 팝업이 뜬 경우 "일반글" 클릭
-    const typeSelectors = [
-      "li:has-text('일반글')",
-      "button:has-text('일반글')",
-      "a:has-text('일반글')",
-      "li:has-text('텍스트')",
-      "button:has-text('텍스트')",
-      "[class*='write_type'] li:first-child",
-      "[class*='WriteType'] li:first-child",
-      "[class*='post_type'] li:first-child",
-    ];
-    for (const sel of typeSelectors) {
-      try {
-        const el = page.locator(sel).first();
-        if (await el.isVisible({ timeout: 2000 })) {
-          await el.click();
-          console.log(`[Cafe] 글 유형 선택: ${sel}`);
-          break;
-        }
-      } catch { continue; }
-    }
-
-    // React SPA 렌더링 완료 대기
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => null);
-    await page.waitForTimeout(3000);
-
-    // write 페이지 이동 후 스크린샷
-    const debugPath2 = require("path").join(os.tmpdir(), "cafe-debug2.png");
-    await page.screenshot({ path: debugPath2, fullPage: true });
-    console.log(`[Cafe] write 이후 스크린샷: ${debugPath2}`);
+    const currentUrl2 = page.url();
+    const bodySnippet = await page.evaluate(() => document.body?.innerHTML?.slice(0, 500) ?? "").catch(() => "");
+    console.log(`[Cafe] write 페이지 URL: ${currentUrl2}`);
+    console.log(`[Cafe] innerHTML 앞부분: ${bodySnippet.replace(/\s+/g, " ")}`);
+    console.log(`[Cafe] write 페이지 스크린샷: ${debugPath}`);
     const currentUrl = page.url();
     const allFrames = page.frames().map((f) => f.url().slice(0, 80));
     const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 300) ?? "").catch(() => "");
