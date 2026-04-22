@@ -124,11 +124,18 @@ export default function HomePage() {
 
   // 자동화 패널
   const [autoOpen, setAutoOpen] = useState(false);
+  const [publishTab, setPublishTab] = useState<"blog" | "cafe">("blog");
   const [instantPosting, setInstantPosting] = useState(false);
   const [postingStep, setPostingStep] = useState("");
   const [instantResult, setInstantResult] = useState<{
     topic?: string; blogTitle?: string; postUrl?: string; log?: string[]; error?: string;
   } | null>(null);
+  const [cafePosting, setCafePosting] = useState(false);
+  const [cafePostingStep, setCafePostingStep] = useState("");
+  const [cafeResult, setCafeResult] = useState<{
+    topic?: string; title?: string; postUrl?: string; error?: string;
+  } | null>(null);
+  const [cafeBoardKey, setCafeBoardKey] = useState<"자유게시판" | "디카드" | "쓰레드" | "인스타그램유튜브">("자유게시판");
   const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [schedTime, setSchedTime] = useState("09:00");
   const [schedType, setSchedType] = useState<"daily" | "weekly" | "once">("weekly");
@@ -282,6 +289,57 @@ export default function HomePage() {
     } finally {
       setInstantPosting(false);
       setPostingStep("");
+    }
+  }
+
+  /** 카페 전용: 새 주제로 독립 생성 후 카페 발행 */
+  async function handleCafePost() {
+    setCafePosting(true);
+    setCafeResult(null);
+    try {
+      setCafePostingStep("트렌드 수집 및 콘텐츠 생성 중...");
+      const autoRes = await fetch("/api/auto-run", {
+        method: "POST",
+        headers: apiHeaders(),
+      });
+      const autoData = await autoRes.json();
+      if (!autoRes.ok || !autoData.success) throw new Error(autoData.error ?? "콘텐츠 생성 실패");
+
+      setContent(autoData.cardContent);
+      setCaption(autoData.cardContent?.caption ?? "");
+      setTopic(autoData.topic ?? "");
+      await new Promise((r) => setTimeout(r, 800));
+
+      setCafePostingStep("카드 이미지 캡처 중...");
+      const images: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const el = captureRefs.current[i];
+        if (!el) continue;
+        const canvas = await html2canvas(el, {
+          scale: 1, useCORS: true, allowTaint: true, backgroundColor: null,
+          width: CARD_W, height: CARD_H,
+        });
+        images.push(canvas.toDataURL("image/png", 0.9));
+      }
+
+      setCafePostingStep(`카페 포스팅 중... (${cafeBoardKey})`);
+      const res = await fetch(`${LOCAL_SERVER}/cafe-post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: autoData.blogTitle, content: autoData.blogContent, board: cafeBoardKey, images }),
+        signal: AbortSignal.timeout(180000),
+      });
+      const data = await res.json() as { ok?: boolean; postUrl?: string; error?: string };
+      if (!res.ok || !data.ok) throw new Error(data.error ?? "카페 포스팅 실패");
+
+      setCafeResult({ topic: autoData.topic, title: autoData.blogTitle, postUrl: data.postUrl ?? "" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "알 수 없는 오류";
+      const isServer = msg.includes("fetch") || msg.includes("Failed") || msg.includes("NetworkError");
+      setCafeResult({ error: isServer ? "로컬 서버에 연결할 수 없습니다. setup-task.ps1을 실행했는지 확인하세요." : msg });
+    } finally {
+      setCafePosting(false);
+      setCafePostingStep("");
     }
   }
 
@@ -1474,25 +1532,43 @@ export default function HomePage() {
             {/* 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
               <div>
-                <h3 className="text-base font-bold text-[#1A1A1A]">네이버 블로그 발행</h3>
-                <p className="text-xs text-gray-400 mt-0.5">즉시 발행 또는 예약 발행을 선택하세요</p>
+                <h3 className="text-base font-bold text-[#1A1A1A]">네이버 발행</h3>
+                <p className="text-xs text-gray-400 mt-0.5">블로그·카페 각각 독립 생성하여 저품질 방지</p>
               </div>
               <button onClick={() => setAutoOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
 
+            {/* 탭 — 블로그 / 카페 */}
+            <div className="flex border-b border-gray-100 sticky top-[61px] bg-white z-10">
+              {(["blog", "cafe"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setPublishTab(tab)}
+                  className={`flex-1 py-3 text-sm font-bold transition-colors ${
+                    publishTab === tab
+                      ? "text-[#DC2626] border-b-2 border-[#DC2626]"
+                      : "text-gray-400 hover:text-gray-600"
+                  }`}
+                >
+                  {tab === "blog" ? "📝 블로그" : "☕ 카페"}
+                </button>
+              ))}
+            </div>
+
             <div className="p-6 space-y-5">
 
-              {/* ══════════ 즉시 발행 구역 ══════════ */}
+              {/* ══════════ 블로그 탭 ══════════ */}
+              {publishTab === "blog" && (
               <div className="rounded-2xl border-2 border-[#DC2626]/20 bg-red-50/30 overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-3 bg-[#DC2626] text-white">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span className="text-sm font-bold">즉시 발행</span>
+                  <span className="text-sm font-bold">블로그 즉시 발행</span>
                   <span className="ml-auto text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full">지금 바로</span>
                 </div>
                 <div className="p-4 space-y-3">
-                  <p className="text-xs text-gray-500">버튼을 누르면 바로 카드뉴스를 생성하고 네이버 블로그에 발행합니다. 로컬 PC가 켜져 있어야 합니다.</p>
+                  <p className="text-xs text-gray-500">새 주제·카드·원고를 독립 생성하여 블로그에 발행합니다. 로컬 PC가 켜져 있어야 합니다.</p>
 
                   {content && (
                     <button
@@ -1534,7 +1610,6 @@ export default function HomePage() {
                     )}
                   </button>
 
-                  {/* 결과 */}
                   {instantResult && (
                     <div className={`rounded-xl p-3 space-y-1.5 ${
                       instantResult.error ? "bg-red-100 border border-red-200" : "bg-green-50 border border-green-200"
@@ -1543,7 +1618,7 @@ export default function HomePage() {
                         <p className="text-xs text-red-700 font-semibold">❌ {instantResult.error}</p>
                       ) : (
                         <>
-                          <p className="text-xs font-bold text-green-700">✅ 발행 완료!</p>
+                          <p className="text-xs font-bold text-green-700">✅ 블로그 발행 완료!</p>
                           {instantResult.topic && <p className="text-xs text-gray-600"><span className="font-semibold">주제:</span> {instantResult.topic}</p>}
                           <p className="text-xs text-gray-600"><span className="font-semibold">제목:</span> {instantResult.blogTitle}</p>
                           {instantResult.postUrl && (
@@ -1556,9 +1631,83 @@ export default function HomePage() {
                   )}
                 </div>
               </div>
+              )}
 
-              {/* ══════════ 예약 발행 구역 ══════════ */}
-              <div className="rounded-2xl border-2 border-gray-200 overflow-hidden">
+              {/* ══════════ 카페 탭 ══════════ */}
+              {publishTab === "cafe" && (
+              <div className="rounded-2xl border-2 border-emerald-200/60 bg-emerald-50/20 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="text-sm font-bold">카페 즉시 발행</span>
+                  <span className="ml-auto text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full">블로그와 독립 생성</span>
+                </div>
+                <div className="p-4 space-y-3">
+                  <p className="text-xs text-gray-500">블로그와 별개로 새 주제·카드·원고를 생성하여 카페에 발행합니다. 저품질 방지를 위해 콘텐츠가 완전히 달라집니다.</p>
+
+                  {/* 게시판 선택 */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">게시판 선택</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["자유게시판", "디카드", "쓰레드", "인스타그램유튜브"] as const).map((board) => (
+                        <button
+                          key={board}
+                          onClick={() => setCafeBoardKey(board)}
+                          className={`py-2 px-3 rounded-lg text-xs font-semibold transition-all text-left ${
+                            cafeBoardKey === board
+                              ? "bg-emerald-600 text-white shadow-sm"
+                              : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                          }`}
+                        >
+                          {board === "인스타그램유튜브" ? "인스타그램/유튜브" : board}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCafePost}
+                    disabled={cafePosting}
+                    className="w-full bg-emerald-600 text-white py-3 rounded-xl text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {cafePosting ? (
+                      <><Spinner /> {cafePostingStep || "진행 중..."}</>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        새로 생성하여 카페 발행
+                      </>
+                    )}
+                  </button>
+
+                  {cafeResult && (
+                    <div className={`rounded-xl p-3 space-y-1.5 ${
+                      cafeResult.error ? "bg-red-100 border border-red-200" : "bg-green-50 border border-green-200"
+                    }`}>
+                      {cafeResult.error ? (
+                        <p className="text-xs text-red-700 font-semibold">❌ {cafeResult.error}</p>
+                      ) : (
+                        <>
+                          <p className="text-xs font-bold text-green-700">✅ 카페 발행 완료!</p>
+                          {cafeResult.topic && <p className="text-xs text-gray-600"><span className="font-semibold">주제:</span> {cafeResult.topic}</p>}
+                          <p className="text-xs text-gray-600"><span className="font-semibold">제목:</span> {cafeResult.title}</p>
+                          {cafeResult.postUrl && (
+                            <a href={cafeResult.postUrl} target="_blank" rel="noopener noreferrer"
+                              className="text-[10px] text-blue-600 underline break-all">{cafeResult.postUrl}</a>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              )}
+
+              {/* ══════════ 예약 발행 구역 (블로그 탭 전용) ══════════ */}
+              {publishTab === "blog" && <div className="rounded-2xl border-2 border-gray-200 overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-3 bg-[#1A1A1A] text-white">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1760,6 +1909,7 @@ export default function HomePage() {
                 </div>
                 </div>
               </div>
+              }
 
             </div>
           </div>

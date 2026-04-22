@@ -10,6 +10,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { postToNaverBlogPlaywright } from "../lib/naverBlogPlaywright";
+import { postToNaverCafe, type CafeBoardKey } from "../lib/naverCafePlaywright";
 
 function loadEnv(): void {
   const envPath = path.join(__dirname, "..", ".env.local");
@@ -78,27 +79,42 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-async function handlePost(body: {
-  title: string; content: string; tags?: string[]; images?: string[];
-}): Promise<string> {
-  const { title, content, tags = [], images = [] } = body;
-  const tmpDir = path.join(os.tmpdir(), `tianxia-post-${Date.now()}`);
-  const imagePaths: string[] = [];
-
+async function saveImages(images: string[], prefix: string): Promise<{ tmpDir: string; paths: string[] }> {
+  const tmpDir = path.join(os.tmpdir(), `${prefix}-${Date.now()}`);
+  const paths: string[] = [];
   if (images.length > 0) {
     fs.mkdirSync(tmpDir, { recursive: true });
     for (let i = 0; i < images.length; i++) {
       const base64 = images[i].replace(/^data:image\/\w+;base64,/, "");
       const filePath = path.join(tmpDir, `card_${i + 1}.png`);
       fs.writeFileSync(filePath, Buffer.from(base64, "base64"));
-      imagePaths.push(filePath);
+      paths.push(filePath);
     }
   }
+  return { tmpDir, paths };
+}
 
+async function handlePost(body: {
+  title: string; content: string; tags?: string[]; images?: string[];
+}): Promise<string> {
+  const { title, content, tags = [], images = [] } = body;
+  const { tmpDir, paths: imagePaths } = await saveImages(images, "tianxia-post");
   try {
     return await postToNaverBlogPlaywright(
       NAVER_ID, NAVER_PW, NAVER_BLOG_ID, title, content, tags, imagePaths
     );
+  } finally {
+    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function handleCafePost(body: {
+  title: string; content: string; board: CafeBoardKey; images?: string[];
+}): Promise<string> {
+  const { title, content, board, images = [] } = body;
+  const { tmpDir, paths: imagePaths } = await saveImages(images, "tianxia-cafe");
+  try {
+    return await postToNaverCafe(NAVER_ID, NAVER_PW, board, title, content, imagePaths);
   } finally {
     if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -214,6 +230,44 @@ const server = http.createServer(async (req, res) => {
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
         console.error(`[server] error:`, msg);
+        respond(res, 500, { error: msg });
+      })
+      .finally(() => { busy = false; });
+    return;
+  }
+
+  // POST /cafe-post
+  if (req.method === "POST" && url === "/cafe-post") {
+    if (busy) {
+      respond(res, 429, { error: "posting in progress, please wait" });
+      return;
+    }
+    if (!NAVER_ID || !NAVER_PW) {
+      respond(res, 500, { error: "NAVER_ID / NAVER_PW not set in .env.local" });
+      return;
+    }
+
+    const raw = await readBody(req);
+    let body: { title: string; content: string; board: CafeBoardKey; images?: string[] };
+    try { body = JSON.parse(raw); } catch {
+      respond(res, 400, { error: "invalid JSON" });
+      return;
+    }
+    if (!body.title || !body.content || !body.board) {
+      respond(res, 400, { error: "title, content, board required" });
+      return;
+    }
+
+    busy = true;
+    console.log(`[server] cafe posting: "${body.title}" → ${body.board}`);
+    handleCafePost(body)
+      .then((postUrl) => {
+        console.log(`[server] cafe done: ${postUrl}`);
+        respond(res, 200, { ok: true, postUrl });
+      })
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[server] cafe error:`, msg);
         respond(res, 500, { error: msg });
       })
       .finally(() => { busy = false; });
