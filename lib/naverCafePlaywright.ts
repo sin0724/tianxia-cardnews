@@ -69,35 +69,51 @@ export async function postToNaverCafe(
       await loginWithCredentials(page, naverId, naverPw);
     }
 
-    // ── 2. 카페 글쓰기 페이지로 이동 ──
+    // ── 2. 카페 홈 먼저 방문 (세션/쿠키 확립) ──
+    await page.goto(`https://cafe.naver.com/${CAFE_URL_ID}`, {
+      waitUntil: "domcontentloaded", timeout: 20000,
+    });
+    await page.waitForTimeout(2000);
+
+    // ── 3. 글쓰기 페이지로 이동 ──
     const writeUrl = `https://cafe.naver.com/ArticleWrite.nhn?clubid=${CAFE_CLUB_ID}&menuid=${board.menuId}`;
     console.log(`[Cafe] 이동: ${writeUrl}`);
-    await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(writeUrl, { waitUntil: "networkidle", timeout: 40000 });
     await page.waitForTimeout(3000);
 
     if (page.url().includes("nidlogin") || page.url().includes("login.naver")) {
       throw new Error("카페 글쓰기 접근 실패 — 로그인이 필요합니다. 쿠키를 갱신하세요.");
     }
 
-    // 페이지 구조 디버그 로그
-    const currentUrl = page.url();
-    const frameCount = page.frames().length;
-    console.log(`[Cafe] 현재 URL: ${currentUrl}, 프레임 수: ${frameCount}`);
+    // 디버그: 스크린샷 저장
+    const debugPath = require("path").join(require("os").tmpdir(), "cafe-debug.png");
+    await page.screenshot({ path: debugPath, fullPage: true });
+    console.log(`[Cafe] 스크린샷: ${debugPath}`);
 
-    // ── 3. #cafe_main iframe 대기 및 진입 ──
+    // 디버그: 페이지 구조 로그
+    const currentUrl = page.url();
+    const allFrames = page.frames().map((f) => f.url().slice(0, 80));
+    console.log(`[Cafe] URL: ${currentUrl}`);
+    console.log(`[Cafe] 프레임: ${JSON.stringify(allFrames)}`);
+
+    // 페이지 내 주요 요소 탐색 로그
+    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 200) ?? "").catch(() => "");
+    console.log(`[Cafe] body 텍스트: ${bodyText.replace(/\n/g, " ")}`);
+
+    // ── 4. 에디터 진입 ──
     const editorFrame = await getEditorFrame(page);
 
-    // ── 4. 팝업 닫기 ──
+    // ── 5. 팝업 닫기 ──
     await closePopups(editorFrame, page);
 
-    // ── 5. 제목 입력 ──
+    // ── 6. 제목 입력 ──
     await inputTitle(editorFrame, page, title);
 
-    // ── 6. 본문 입력 ──
+    // ── 7. 본문 입력 ──
     const validImages = (imagePaths ?? []).filter((p) => fs.existsSync(p));
     await inputBody(editorFrame, page, content, validImages);
 
-    // ── 7. 등록 버튼 ──
+    // ── 8. 등록 버튼 ──
     return await submitPost(page, editorFrame, context);
   } finally {
     await browser.close();
@@ -180,19 +196,36 @@ async function getEditorFrame(page: Page): Promise<FrameOrPage> {
     return page;
   }
 
-  // ④ 최후 수단: 더 오래 기다리기
-  console.log("[Cafe] 에디터 대기 중 (20초)...");
-  await page.waitForSelector(
-    "#cafe_main, .se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true']",
-    { timeout: 20000 }
-  );
+  // ④ 최후 수단: 더 오래 기다리고 더 많은 셀렉터 시도
+  console.log("[Cafe] 에디터 장시간 대기 중 (30초)...");
+  const broadSelectors = [
+    "#cafe_main",
+    ".se-section-documentTitle",
+    "#subject",
+    "input[name='subject']",
+    "[contenteditable='true']",
+    "input[placeholder*='제목']",
+    "textarea[placeholder*='내용']",
+    ".write_editor",
+    ".editor_wrap",
+    "iframe",
+  ];
+  await page.waitForSelector(broadSelectors.join(", "), { timeout: 30000 });
 
-  // 한 번 더 #cafe_main 시도
+  // #cafe_main 재시도
   const retryEl = await page.$("#cafe_main");
   if (retryEl) {
     const retryFrame = await retryEl.contentFrame();
     if (retryFrame) return retryFrame;
   }
+
+  // iframe이 1개라도 있으면 진입
+  const iframes = page.frames().filter((f) => f !== page.mainFrame());
+  for (const f of iframes) {
+    const hasEl = await f.$(".se-section-documentTitle, #subject, [contenteditable='true']").catch(() => null);
+    if (hasEl) return f;
+  }
+
   return page;
 }
 
