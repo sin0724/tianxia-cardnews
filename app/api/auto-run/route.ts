@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiKey, missingKeyResponse, friendlyError } from "@/lib/getApiKey";
 import { loadUsedTopics, saveUsedTopics, pickUnusedTopic } from "@/lib/topicHistory";
+import type { CafeBoardKey } from "@/lib/naverCafePlaywright";
 
 function baseUrl(req: NextRequest): string {
   const proto = req.headers.get("x-forwarded-proto") ?? "https";
@@ -11,6 +12,9 @@ function baseUrl(req: NextRequest): string {
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey(req);
   if (!apiKey) return missingKeyResponse();
+
+  const body = await req.json().catch(() => ({})) as { cafeBoard?: CafeBoardKey };
+  const cafeBoard: CafeBoardKey | undefined = body.cafeBoard;
 
   const base = baseUrl(req);
   const headers = { "Content-Type": "application/json", "x-user-api-key": apiKey };
@@ -57,6 +61,33 @@ export async function POST(req: NextRequest) {
     // 5. 주제 히스토리 저장
     saveUsedTopics([...usedTopics, topic]);
 
+    // 6. (선택) 카페 발행
+    let cafeResult: { success: boolean; postUrl?: string; error?: string } | null = null;
+    if (cafeBoard) {
+      log.push(`카페 발행 중... (게시판: ${cafeBoard})`);
+      try {
+        const cafeRes = await fetch(`${base}/api/cafe/post-now`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            title: blogData.title,
+            content: blogData.content,
+            board: cafeBoard,
+          }),
+        });
+        cafeResult = await cafeRes.json() as { success: boolean; postUrl?: string; error?: string };
+        if (cafeResult.success) {
+          log.push(`카페 발행 완료: ${cafeResult.postUrl}`);
+        } else {
+          log.push(`카페 발행 실패: ${cafeResult.error}`);
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.push(`카페 발행 오류: ${msg}`);
+        cafeResult = { success: false, error: msg };
+      }
+    }
+
     return NextResponse.json({
       success: true,
       topic,
@@ -65,6 +96,7 @@ export async function POST(req: NextRequest) {
       blogContent: blogData.content,
       tags: blogData.tags,
       cardContent: cardData,
+      cafeResult,
       generatedAt: new Date().toISOString(),
       log,
     });
