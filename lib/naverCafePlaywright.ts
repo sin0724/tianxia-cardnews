@@ -79,43 +79,13 @@ export async function postToNaverCafe(
       throw new Error("카페 접근 실패 — 로그인이 필요합니다. 쿠키를 갱신하세요.");
     }
 
-    // 클릭할 "글쓰기" 링크의 href 수집 (디버그)
-    const writeLinks = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll("a")).
-        filter((a) => a.textContent?.trim() === "글쓰기").
-        map((a) => ({ href: a.href, cls: a.className, outerHTML: a.outerHTML.slice(0, 120) }));
-    });
-    console.log(`[Cafe] 글쓰기 링크 목록: ${JSON.stringify(writeLinks)}`);
+    // 확인된 write URL로 직접 이동
+    const writeUrl = `https://cafe.naver.com/ca-fe/cafes/${CAFE_CLUB_ID}/menus/${board.menuId}/articles/write?boardType=L`;
+    console.log(`[Cafe] write URL 이동: ${writeUrl}`);
+    await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-    // write 관련 href를 가진 링크 우선 클릭
-    let writeClicked = false;
-    const writeHref = writeLinks.find((l) =>
-      l.href.includes("write") || l.href.includes("ArticleWrite")
-    );
-    if (writeHref) {
-      console.log(`[Cafe] write href로 이동: ${writeHref.href}`);
-      await page.goto(writeHref.href, { waitUntil: "domcontentloaded", timeout: 30000 });
-      writeClicked = true;
-    }
-
-    if (!writeClicked) {
-      // href가 없으면 SPA write URL 직접 이동
-      const writeUrl = `https://cafe.naver.com/f-e/cafes/${CAFE_CLUB_ID}/write?menuId=${board.menuId}&boardType=L`;
-      console.log(`[Cafe] 직접 write URL 이동: ${writeUrl}`);
-      await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    }
-
-    // React SPA 렌더링 대기
+    // React + Smart Editor 렌더링 대기
     await page.waitForTimeout(5000);
-
-    const os = require("os") as typeof import("os");
-    const debugPath = require("path").join(os.tmpdir(), "cafe-debug.png");
-    await page.screenshot({ path: debugPath, fullPage: true });
-    const currentUrl2 = page.url();
-    const bodySnippet = await page.evaluate(() => document.body?.innerHTML?.slice(0, 500) ?? "").catch(() => "");
-    console.log(`[Cafe] write 페이지 URL: ${currentUrl2}`);
-    console.log(`[Cafe] innerHTML 앞부분: ${bodySnippet.replace(/\s+/g, " ")}`);
-    console.log(`[Cafe] write 페이지 스크린샷: ${debugPath}`);
     const currentUrl = page.url();
     const allFrames = page.frames().map((f) => f.url().slice(0, 80));
     const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 300) ?? "").catch(() => "");
@@ -150,53 +120,53 @@ export async function postToNaverCafe(
 type FrameOrPage = Page | Frame;
 
 async function getEditorFrame(page: Page): Promise<FrameOrPage> {
-  // 글쓰기 버튼 클릭 후 about:blank 에디터 iframe이 실제 URL로 바뀌길 대기
-  console.log("[Cafe] 에디터 iframe 로드 대기 중...");
+  console.log("[Cafe] 에디터 탐색 중...");
 
-  // 최대 20초간 폴링 — about:blank 아닌 새 iframe 탐색
-  const deadline = Date.now() + 20000;
+  // 최대 25초간 폴링
+  const deadline = Date.now() + 25000;
   while (Date.now() < deadline) {
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
+
+    // ① page 직접 (SPA 인라인 write form)
+    const directEditor = await page.$(
+      ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true']:not([class*='gnb'])"
+    ).catch(() => null);
+    if (directEditor) {
+      console.log("[Cafe] 직접 에디터 감지 (SPA 인라인)");
+      return page;
+    }
+
+    // ② 모든 iframe 탐색 (about:blank 포함 — srcdoc 방식 대응)
     const frames = page.frames();
     for (const frame of frames) {
       if (frame === page.mainFrame()) continue;
-      const url = frame.url();
-      if (!url || url === "about:blank") continue;
 
-      // GNB 패딩 iframe 제외
+      // 0×0 GNB 패딩 제외
       try {
         const el = await frame.frameElement();
         const box = await el.boundingBox();
         if (box && box.width === 0 && box.height === 0) continue;
       } catch { /* ignore */ }
 
-      // 에디터 요소 확인
-      await frame.waitForLoadState("domcontentloaded", { timeout: 3000 }).catch(() => null);
       const hasEditor = await frame.$(
         ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true'], textarea"
       ).catch(() => null);
       if (hasEditor) {
-        console.log(`[Cafe] 에디터 iframe 발견: ${url.slice(0, 80)}`);
+        console.log(`[Cafe] 에디터 iframe 발견: ${frame.url().slice(0, 80)}`);
         return frame;
       }
     }
-
-    // page 직접 렌더링 (SPA 인라인 write form)
-    const directEditor = await page.$(
-      ".se-section-documentTitle, #subject, input[name='subject']"
-    ).catch(() => null);
-    if (directEditor) {
-      console.log("[Cafe] 직접 에디터 감지 (SPA 인라인)");
-      return page;
-    }
   }
 
-  // 최후 수단: 로드된 iframe 중 가장 큰 것 반환
-  const allFrames = page.frames().filter((f) => f !== page.mainFrame() && f.url() !== "about:blank");
-  console.log(`[Cafe] 남은 iframe: ${allFrames.map((f) => f.url().slice(0, 60)).join(" | ")}`);
-  if (allFrames.length > 0) return allFrames[0];
+  // 디버그용 스냅샷
+  const os = require("os") as typeof import("os");
+  const snap = require("path").join(os.tmpdir(), "cafe-debug-fail.png");
+  await page.screenshot({ path: snap, fullPage: true }).catch(() => null);
+  const frameList = page.frames().map((f) => `${f.url().slice(0, 60)}`).join(" | ");
+  console.log(`[Cafe] 실패 스크린샷: ${snap}`);
+  console.log(`[Cafe] 최종 프레임: ${frameList}`);
 
-  throw new Error("[Cafe] 에디터 iframe을 찾을 수 없습니다. 글쓰기 버튼 클릭 후 write form이 로드되지 않았습니다.");
+  throw new Error("[Cafe] 에디터를 찾을 수 없습니다.");
 }
 
 // ─────────────────────────────────────────
