@@ -69,38 +69,59 @@ export async function postToNaverCafe(
       await loginWithCredentials(page, naverId, naverPw);
     }
 
-    // ── 2. 카페 홈 먼저 방문 (세션/쿠키 확립) ──
-    await page.goto(`https://cafe.naver.com/${CAFE_URL_ID}`, {
-      waitUntil: "domcontentloaded", timeout: 20000,
-    });
-    await page.waitForTimeout(2000);
-
-    // ── 3. 글쓰기 페이지로 이동 ──
-    const writeUrl = `https://cafe.naver.com/ArticleWrite.nhn?clubid=${CAFE_CLUB_ID}&menuid=${board.menuId}`;
-    console.log(`[Cafe] 이동: ${writeUrl}`);
-    await page.goto(writeUrl, { waitUntil: "networkidle", timeout: 40000 });
+    // ── 2. 게시판 페이지로 이동 후 글쓰기 버튼 클릭 ──
+    const boardUrl = `https://cafe.naver.com/f-e/cafes/${CAFE_CLUB_ID}/menus/${board.menuId}`;
+    console.log(`[Cafe] 게시판 이동: ${boardUrl}`);
+    await page.goto(boardUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
 
     if (page.url().includes("nidlogin") || page.url().includes("login.naver")) {
-      throw new Error("카페 글쓰기 접근 실패 — 로그인이 필요합니다. 쿠키를 갱신하세요.");
+      throw new Error("카페 접근 실패 — 로그인이 필요합니다. 쿠키를 갱신하세요.");
     }
 
-    // 디버그: 스크린샷 저장
-    const debugPath = require("path").join(require("os").tmpdir(), "cafe-debug.png");
-    await page.screenshot({ path: debugPath, fullPage: true });
-    console.log(`[Cafe] 스크린샷: ${debugPath}`);
+    // 글쓰기 버튼 클릭
+    const writeBtnSelectors = [
+      "a:has-text('글쓰기')",
+      "button:has-text('글쓰기')",
+      ".write_btn",
+      "a[href*='write']",
+      "[class*='write'] a",
+      "a.cafe_write_btn",
+    ];
+    let writeClicked = false;
+    for (const sel of writeBtnSelectors) {
+      try {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 3000 })) {
+          await btn.click();
+          console.log(`[Cafe] 글쓰기 버튼 클릭: ${sel}`);
+          writeClicked = true;
+          break;
+        }
+      } catch { continue; }
+    }
 
-    // 디버그: 페이지 구조 로그
+    if (!writeClicked) {
+      // 글쓰기 버튼 못 찾으면 URL 직접 이동
+      const writeUrl = `https://cafe.naver.com/f-e/cafes/${CAFE_CLUB_ID}/write?menuId=${board.menuId}&boardType=L`;
+      console.log(`[Cafe] 글쓰기 버튼 없음 — 직접 이동: ${writeUrl}`);
+      await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    }
+
+    await page.waitForTimeout(4000);
+
+    // 디버그: 스크린샷 + 로그
+    const os = require("os") as typeof import("os");
+    const debugPath = require("path").join(os.tmpdir(), "cafe-debug.png");
+    await page.screenshot({ path: debugPath, fullPage: true });
     const currentUrl = page.url();
     const allFrames = page.frames().map((f) => f.url().slice(0, 80));
+    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 300) ?? "").catch(() => "");
     console.log(`[Cafe] URL: ${currentUrl}`);
-    console.log(`[Cafe] 프레임: ${JSON.stringify(allFrames)}`);
+    console.log(`[Cafe] 프레임(${allFrames.length}): ${JSON.stringify(allFrames)}`);
+    console.log(`[Cafe] body: ${bodyText.replace(/\s+/g, " ").slice(0, 200)}`);
 
-    // 페이지 내 주요 요소 탐색 로그
-    const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 200) ?? "").catch(() => "");
-    console.log(`[Cafe] body 텍스트: ${bodyText.replace(/\n/g, " ")}`);
-
-    // ── 4. 에디터 진입 ──
+    // ── 3. 에디터 진입 ──
     const editorFrame = await getEditorFrame(page);
 
     // ── 5. 팝업 닫기 ──
