@@ -79,35 +79,42 @@ export async function postToNaverCafe(
       throw new Error("카페 접근 실패 — 로그인이 필요합니다. 쿠키를 갱신하세요.");
     }
 
-    // 글쓰기 버튼 클릭
+    // 글쓰기 버튼 대기 후 클릭
     const writeBtnSelectors = [
       "a:has-text('글쓰기')",
       "button:has-text('글쓰기')",
       ".write_btn",
+      "a.btn_write",
+      "[class*='WriteButton']",
+      "[class*='write_btn']",
       "a[href*='write']",
-      "[class*='write'] a",
-      "a.cafe_write_btn",
     ];
     let writeClicked = false;
     for (const sel of writeBtnSelectors) {
       try {
-        const btn = page.locator(sel).first();
-        if (await btn.isVisible({ timeout: 3000 })) {
-          await btn.click();
-          console.log(`[Cafe] 글쓰기 버튼 클릭: ${sel}`);
-          writeClicked = true;
-          break;
+        await page.waitForSelector(sel, { timeout: 4000 });
+        const btns = await page.locator(sel).all();
+        for (const btn of btns) {
+          if (await btn.isVisible()) {
+            await btn.click();
+            console.log(`[Cafe] 글쓰기 버튼 클릭: ${sel}`);
+            writeClicked = true;
+            break;
+          }
         }
+        if (writeClicked) break;
       } catch { continue; }
     }
 
     if (!writeClicked) {
-      // 글쓰기 버튼 못 찾으면 URL 직접 이동
+      // 글쓰기 버튼 못 찾으면 SPA write URL 직접 이동
       const writeUrl = `https://cafe.naver.com/f-e/cafes/${CAFE_CLUB_ID}/write?menuId=${board.menuId}&boardType=L`;
       console.log(`[Cafe] 글쓰기 버튼 없음 — 직접 이동: ${writeUrl}`);
       await page.goto(writeUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     }
 
+    // React SPA 렌더링 완료 대기
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => null);
     await page.waitForTimeout(4000);
 
     // 디버그: 스크린샷 + 로그
@@ -194,11 +201,17 @@ async function getEditorFrame(page: Page): Promise<FrameOrPage> {
     console.log("[Cafe] #cafe_main 없음 — 다른 방법 시도");
   }
 
-  // ② 다른 iframe들 순회
+  // ② 다른 iframe들 순회 (GNB 더미 제외)
   const frames = page.frames();
   console.log(`[Cafe] 프레임 목록: ${frames.map((f) => f.url().slice(0, 60)).join(" | ")}`);
   for (const frame of frames) {
     if (frame === page.mainFrame()) continue;
+    // 0×0 GNB 패딩 iframe 제외
+    const frameEl = await frame.frameElement().catch(() => null);
+    if (frameEl) {
+      const box = await frameEl.boundingBox().catch(() => null);
+      if (box && box.width === 0 && box.height === 0) continue;
+    }
     const hasEditor = await frame.$(
       ".se-section-documentTitle, #subject, input[name='subject'], [contenteditable='true']"
     ).catch(() => null);
