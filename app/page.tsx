@@ -37,10 +37,10 @@ const EDIT_TABS = ["카드 1", "카드 2", "카드 3", "카드 4", "카드 5", "
 type EditTab = typeof EDIT_TABS[number];
 
 const BUILTIN_TEMPLATES = [
-  { id: "A", name: "레드 클래식", desc: "풀 컬러 배경", primary: "#DC2626", secondary: "#1A1A1A" },
-  { id: "B", name: "에디토리얼", desc: "화이트 기반 편집체", primary: "#1A1A1A", secondary: "#E8E8E8" },
-  { id: "C", name: "다이나믹 타이포", desc: "다크·하단집중·스텝형", primary: "#0D0D0D", secondary: "#DC2626" },
-  { id: "D", name: "클린 레이아웃", desc: "상단집중·스플릿·번호형", primary: "#FFFFFF", secondary: "#DC2626" },
+  { id: "A", name: "레드 클래식", desc: "풀 컬러 배경", primary: "#DC2626", secondary: "#1A1A1A", coverBg: "#DC2626", darkBg: "#1A1A1A", lightBg: "#F4F4F4", lightText: true },
+  { id: "B", name: "에디토리얼", desc: "화이트 기반 편집체", primary: "#1A1A1A", secondary: "#E8E8E8", coverBg: "#FFFFFF", darkBg: "#1A1A1A", lightBg: "#F5F5F5", lightText: false },
+  { id: "C", name: "다이나믹 타이포", desc: "다크·하단집중·스텝형", primary: "#0D0D0D", secondary: "#DC2626", coverBg: "#0D0D0D", darkBg: "#1A1A1A", lightBg: "#F4F4F4", lightText: true },
+  { id: "D", name: "클린 레이아웃", desc: "상단집중·스플릿·번호형", primary: "#FFFFFF", secondary: "#DC2626", coverBg: "#FFFFFF", darkBg: "#DC2626", lightBg: "#F9F9F9", lightText: false },
 ] as const;
 
 const STORAGE_KEY = "tianxia_custom_templates";
@@ -100,6 +100,7 @@ export default function HomePage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
   const [analyzeSuccess, setAnalyzeSuccess] = useState("");
+  const [analyzeComment, setAnalyzeComment] = useState("");
   const [lastCreatedTemplate, setLastCreatedTemplate] = useState<CardStyleConfig | null>(null);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -544,7 +545,10 @@ export default function HomePage() {
       const res = await fetch("/api/analyze-style", {
         method: "POST",
         headers: apiHeaders(),
-        body: JSON.stringify({ images: filled.map((s) => ({ base64: s.base64, mediaType: s.mediaType })) }),
+        body: JSON.stringify({
+          images: filled.map((s) => ({ base64: s.base64, mediaType: s.mediaType })),
+          comment: analyzeComment.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "분석 실패");
@@ -563,6 +567,7 @@ export default function HomePage() {
       setSelectedId(finalId);
       setLastCreatedTemplate(newConfig);
       setUploadSlots(Array(5).fill(null));
+      setAnalyzeComment("");
       setAnalyzeSuccess(newConfig.name);
     } catch (e) {
       setAnalyzeError(e instanceof Error ? e.message : "스타일 분석 실패");
@@ -1058,6 +1063,10 @@ export default function HomePage() {
                       desc={t.desc}
                       primary={t.primary}
                       secondary={t.secondary}
+                      coverBg={t.coverBg}
+                      darkBg={t.darkBg}
+                      lightBg={t.lightBg}
+                      lightText={t.lightText}
                       active={selectedId === t.id}
                       onClick={() => setSelectedId(t.id)}
                     />
@@ -1069,6 +1078,9 @@ export default function HomePage() {
                         desc="스토리보드 분석"
                         primary={t.cards[0].background}
                         secondary={t.cards[2].background}
+                        coverBg={t.cards[0].background}
+                        darkBg={t.cards[1].background}
+                        lightBg={t.cards[3].background}
                         active={selectedId === t.id}
                         onClick={() => setSelectedId(t.id)}
                         badge="📋"
@@ -1083,10 +1095,11 @@ export default function HomePage() {
                     <div key={t.id} className="relative">
                       {editingTemplateId === t.id ? (
                         <div className={`rounded-xl border-2 overflow-hidden ${selectedId === t.id ? "border-[#DC2626]" : "border-gray-200"}`}>
-                          <div className="h-14 flex">
-                            <div className="flex-1" style={{ background: t.primary }} />
+                          <div className="h-20 flex">
+                            <div className="flex-1" style={{ background: t.coverBg }} />
                             <div className="flex-1" style={{ background: t.darkCardBg }} />
-                            <div className="flex-1 bg-white border-l border-black/5" />
+                            <div className="flex-1" style={{ background: t.lightCardBg }} />
+                            <div className="flex-1" style={{ background: t.primary }} />
                           </div>
                           <div className="p-3 bg-white space-y-2">
                             <input
@@ -1112,6 +1125,9 @@ export default function HomePage() {
                           desc="레퍼런스 분석"
                           primary={t.primary}
                           secondary={t.darkCardBg}
+                          coverBg={t.coverBg}
+                          darkBg={t.darkCardBg}
+                          lightBg={t.lightCardBg}
                           active={selectedId === t.id}
                           onClick={() => setSelectedId(t.id)}
                           onEditName={(e) => startEditTemplateName(t.id, t.name, e)}
@@ -1197,6 +1213,17 @@ export default function HomePage() {
                   onFileSelected={handleSlotFile}
                   onRemove={(i) => setUploadSlots((prev) => prev.map((s, idx) => idx === i ? null : s))}
                 />
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-gray-500">스타일 방향 코멘트 <span className="font-normal text-gray-400">(선택)</span></label>
+                  <textarea
+                    value={analyzeComment}
+                    onChange={(e) => setAnalyzeComment(e.target.value)}
+                    placeholder={"원하는 스타일 방향을 자유롭게 써주세요\n예: 미니멀하고 깔끔한 느낌으로, 파란색 계열, 모서리를 둥글게"}
+                    rows={3}
+                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-gray-200 focus:border-gray-400 placeholder:text-gray-300 leading-relaxed"
+                  />
+                </div>
 
                 {analyzeError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{analyzeError}</p>}
 
@@ -2055,19 +2082,70 @@ function StepsBar({ step }: { step: number }) {
   );
 }
 
-function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditName, badge }: {
-  name: string; desc: string; primary: string; secondary: string; active: boolean; onClick: () => void; onEditName?: (e: React.MouseEvent) => void; badge?: string;
+function hexLuminance(hex: string): number {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return 128;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditName, badge,
+                        coverBg, darkBg, lightBg, lightText }: {
+  name: string; desc: string; primary: string; secondary: string; active: boolean; onClick: () => void;
+  onEditName?: (e: React.MouseEvent) => void; badge?: string;
+  coverBg?: string; darkBg?: string; lightBg?: string; lightText?: boolean;
 }) {
+  const bg = coverBg || primary;
+  const dark = darkBg || secondary;
+  const light = lightBg || "#F5F5F5";
+  const accent = primary;
+  const isLight = lightText !== undefined ? lightText : hexLuminance(bg) < 128;
+  const txt = isLight ? "rgba(255,255,255,0.92)" : "rgba(20,20,20,0.85)";
+  const muted = isLight ? "rgba(255,255,255,0.4)" : "rgba(20,20,20,0.28)";
+  const accentIsLight = hexLuminance(accent) > 180;
+
   return (
     <button onClick={onClick}
-      className={`w-full rounded-xl overflow-hidden border-2 transition-all text-left ${active ? "border-[#DC2626] shadow-md shadow-red-100" : "border-gray-100 hover:border-gray-300"}`}>
-      <div className="h-14 flex">
-        <div className="flex-1" style={{ background: primary }} />
-        <div className="flex-1" style={{ background: secondary }} />
-        <div className="flex-1 bg-white border-l border-black/5" />
+      className={`w-full rounded-xl overflow-hidden border-2 transition-all text-left ${active ? "border-[#DC2626] shadow-md shadow-red-100" : "border-gray-200 hover:border-gray-300"}`}>
+
+      {/* Mini card preview */}
+      <div className="relative overflow-hidden" style={{ height: 110, background: bg }}>
+        <div className="absolute inset-x-0 top-0 bottom-6 p-3 flex flex-col justify-between">
+          {/* Header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <div className="h-3.5 rounded px-1.5 flex items-center" style={{ background: accent, minWidth: 30 }}>
+                <div className="h-1 rounded-full w-4" style={{ background: accentIsLight ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.9)" }} />
+              </div>
+            </div>
+            <div style={{ fontSize: 7, fontWeight: 700, color: muted, letterSpacing: "0.05em" }}>01 / 05</div>
+          </div>
+
+          {/* Title bars */}
+          <div className="space-y-1">
+            <div className="h-2.5 rounded" style={{ background: txt, width: "70%", opacity: 0.9 }} />
+            <div className="h-2.5 rounded" style={{ background: txt, width: "50%", opacity: 0.9 }} />
+            <div className="h-1.5 rounded mt-0.5" style={{ background: muted, width: "58%" }} />
+          </div>
+        </div>
+
+        {/* 5-card color palette strip */}
+        <div className="absolute bottom-0 left-0 right-0 flex" style={{ height: 20 }}>
+          {[bg, dark, bg, light, dark].map((c, i) => (
+            <div key={i} className="flex-1 flex items-center justify-center" style={{ background: c }}>
+              <div className="text-center" style={{ fontSize: 5.5, color: hexLuminance(c) < 128 ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.3)", fontWeight: 600, letterSpacing: "0.03em" }}>
+                {["커버", "후킹", "인사이트", "리스트", "CTA"][i]}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="p-3 bg-white">
-        <div className="flex items-center justify-between">
+
+      {/* Name row */}
+      <div className="px-3 py-2.5 bg-white">
+        <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               {badge && <span className="text-xs">{badge}</span>}
@@ -2084,10 +2162,10 @@ function TemplateCard({ name, desc, primary, secondary, active, onClick, onEditN
                 </button>
               )}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate">{desc}</p>
           </div>
           {active && (
-            <div className="w-5 h-5 bg-[#DC2626] rounded-full flex items-center justify-center flex-shrink-0 ml-2">
+            <div className="w-5 h-5 bg-[#DC2626] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
               <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>

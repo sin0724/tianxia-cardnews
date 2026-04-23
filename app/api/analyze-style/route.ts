@@ -8,8 +8,9 @@ export async function POST(req: NextRequest) {
   if (!apiKey) return missingKeyResponse();
 
   try {
-    const { images } = (await req.json()) as {
+    const { images, comment } = (await req.json()) as {
       images: Array<{ base64: string; mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp" }>;
+      comment?: string;
     };
 
     if (!images || images.length === 0) {
@@ -31,6 +32,10 @@ export async function POST(req: NextRequest) {
       ? `아래 ${images.length}장의 이미지는 카드뉴스 한 세트입니다. 전체 세트의 공통 색상, 스타일, 분위기를 종합 분석해서 아래 JSON 형식으로 출력해주세요.`
       : "이 이미지는 카드뉴스/인스타그램 포스트 디자인 레퍼런스입니다.\n이미지의 색상, 스타일, 분위기를 분석해서 아래 JSON 형식으로 출력해주세요.";
 
+    const commentSection = comment?.trim()
+      ? `\n\n[사용자 스타일 방향 코멘트]\n${comment.trim()}\n위 코멘트를 최우선으로 반영하여 색상과 스타일을 결정해주세요.`
+      : "";
+
     const response = await client.messages.create({
       model: "claude-opus-4-6",
       max_tokens: 1200,
@@ -41,7 +46,7 @@ export async function POST(req: NextRequest) {
             ...imageBlocks,
             {
               type: "text",
-              text: `${introText}
+              text: `${introText}${commentSection}
 
 분석 기준:
 - 주요 포인트 색상 (가장 눈에 띄는 강조색)
